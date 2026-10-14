@@ -10,9 +10,67 @@ DeepSeek Harness 第三方插件集合，各插件为独立可安装的 Cordis b
 
 ## 安装
 
-克隆仓库后，在 DSH 插件管理器分别选择相应 `plugins/dsh-plugin-*` 目录安装。每个目录都有独立 package.json 和 bundle patch；仓库根目录不是单一 bundle。需要匹配的 DSH peerDependencies，详见插件各自文档。
+### 前置条件
 
-也可在插件目录运行 `npm pack` 生成安装包。美团依赖 Playwright，默认使用系统 Edge，首次由用户人工登录，不保存/导入 Cookie。
+- Node.js >=22、Git，以及已安装且能运行的 `dsh` 和 `pnpm`。
+- 当前插件声明兼容 **DSH 0.2.1-alpha.1**。先执行 `dsh --version` 检查；其他版本尚未测试，遇到兼容性错误不要强行绕过。
+- 下列命令安装到 `web` profile；使用其他 profile 时，将所有 `--profile web` 和最后的 `dsh web` 改成实际名称。
+
+### 克隆并安装全部三个插件
+
+以下命令适用于 PowerShell、macOS/Linux 终端。在希望保存源码的目录执行：
+
+```sh
+git clone https://github.com/sibetlyf/dsh-plugins.git
+cd dsh-plugins
+
+dsh plugin --profile web add ./plugins/dsh-plugin-didi
+dsh plugin --profile web add ./plugins/dsh-plugin-meituan
+dsh plugin --profile web add ./plugins/dsh-plugin-tencent-meeting
+```
+
+只安装其中一个时，仅执行对应的 `add` 命令。相对路径以当前终端所在目录为准，上述命令要求在克隆后的仓库根目录执行。命令由 DSH 管理 profile 依赖与 bundle 选择，无需手动编辑 profile 配置。
+
+> 这是多插件仓库，**不要**执行 `dsh plugin --profile web add https://github.com/sibetlyf/dsh-plugins.git`：仓库根目录不是一个 bundle。这些包目前未发布到 npm，也不能直接用裸包名安装。
+
+安装成功后，若 DSH 已在运行，请先正常停止现有进程，再重新启动同一个 profile：
+
+```sh
+dsh web
+```
+
+不要同时启动第二个 Web 实例来替换正在使用的页面。重新连接/刷新现有页面后，在插件管理器确认插件已启用且无激活错误。若安装器报告错误、待审批构建脚本或版本不兼容，应先处理该状态，不能仅凭命令退出就认定可用。本仓库自身没有安装/构建脚本。
+
+### 安装后的必要配置
+
+| 插件 | 必须完成的配置 | 首次验证 |
+|---|---|---|
+| 滴滴 | 在 DSH 凭据设置创建 `DSH_DIDI_API_KEY`，填入自己的 MCP Key；默认保持 `environment: sandbox` | 请 Agent 调用 `didi_discover`，参数 `{"statusOnly":true}`，随后发现官方工具 |
+| 美团 | 默认使用系统 Edge；在独立浏览器中人工登录、选择配送地址。不需要 API Key | 请 Agent 调用 `meituan_discover`；实际浏览功能需要可启动的浏览器 |
+| 腾讯会议 | 在 DSH 凭据设置创建 `DSH_TENCENT_MEETING_TOKEN`，填入从 [腾讯会议](https://meeting.tencent.com/ai-skill) 获取的个人 Token | 请 Agent 调用 `tencent_meeting_discover`，参数 `{"statusOnly":true}` |
+
+不要将 key、Token 或 Cookie 写入仓库、命令参数或发到聊天。美团安装会解析 Playwright 运行依赖，默认不下载浏览器；没有 Edge 时可改插件配置 `channel: chrome` 使用已安装的 Chrome。建议先使用这两个系统浏览器之一。若选择 `channel: chromium`，需要另行安装与插件所用 Playwright 版本匹配的 Chromium，参见 [Playwright 浏览器安装文档](https://playwright.dev/docs/browsers)。美团不导入或保存现有 Cookie。
+
+### 更新与卸载
+
+在仓库根目录更新源码后，重新执行所需插件的安装命令，再正常重启对应 DSH profile：
+
+```sh
+git pull --ff-only
+dsh plugin --profile web add ./plugins/dsh-plugin-didi
+dsh plugin --profile web add ./plugins/dsh-plugin-meituan
+dsh plugin --profile web add ./plugins/dsh-plugin-tencent-meeting
+```
+
+卸载某个插件（按需选择）：
+
+```sh
+dsh plugin --profile web remove dsh-plugin-didi
+dsh plugin --profile web remove dsh-plugin-meituan
+dsh plugin --profile web remove dsh-plugin-tencent-meeting
+```
+
+也可通过 DSH 插件管理器分别安装各插件目录的绝对路径。每个目录都有独立 manifest 和 bundle patch；本地目录安装可能链接到源码，安装后不要随意移动或删除克隆目录。需要可搬移包时，可在相应插件目录运行 `npm pack`，再用 `dsh plugin --profile web add <生成的.tgz绝对路径>` 安装。
 
 ## 安全
 

@@ -10,7 +10,17 @@
 
 ## 配置
 
-在 DSH 插件管理器安装本包，安装 Playwright 运行依赖；默认使用系统 Edge。不包含安装后自动下载浏览器的脚本。
+首次下载并安装（已克隆仓库则跳过前两行，在仓库根目录执行）：
+
+```sh
+git clone https://github.com/sibetlyf/dsh-plugins.git
+cd dsh-plugins
+dsh plugin --profile web add ./plugins/dsh-plugin-meituan
+```
+
+安装会解析 Playwright 运行依赖。安装后正常重启对应 DSH profile（停止现有进程后执行 `dsh web`），并在插件管理器确认启用状态。其他 profile 请替换 `web`。完整更新、卸载及多插件安装见 [仓库安装说明](../../README.md#安装)。
+
+默认使用系统 Edge；没有 Edge 时可将 `channel` 改成 `chrome` 使用已安装的 Chrome。不包含安装后自动下载浏览器的脚本。
 
 ```yaml
 channel: msedge # chromium / chrome / msedge

@@ -4,7 +4,15 @@
 
 ## 安装与配置
 
-在 DSH 插件管理器中安装此 bundle（本地目录、包或仓库，按当前 DSH 支持的安装来源选择）。本包不包含安装脚本，不需要构建前端。
+首次下载并安装（已克隆仓库则跳过前两行，在仓库根目录执行）：
+
+```sh
+git clone https://github.com/sibetlyf/dsh-plugins.git
+cd dsh-plugins
+dsh plugin --profile web add ./plugins/dsh-plugin-didi
+```
+
+安装后正常重启对应 DSH profile（停止现有进程后执行 `dsh web`），并在插件管理器确认启用状态。本包不包含安装脚本，不需要构建前端。其他 profile 请替换 `web`。完整更新、卸载及多插件安装见 [仓库安装说明](../../README.md#安装)。
 
 1. 在 DSH 凭据设置中创建 `DSH_DIDI_API_KEY`，填入你自己的滴滴 MCP Key。
 2. 启用「滴滴打车」插件。配置默认 `environment: sandbox`。

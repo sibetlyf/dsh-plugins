@@ -4,11 +4,15 @@
 
 ## 安装
 
-```powershell
-dsh plugin --profile web add https://github.com/sibetlyf/dsh-plugin-tencent-meeting.git
+首次下载并安装（已克隆仓库则跳过前两行，在仓库根目录执行）：
+
+```sh
+git clone https://github.com/sibetlyf/dsh-plugins.git
+cd dsh-plugins
+dsh plugin --profile web add ./plugins/dsh-plugin-tencent-meeting
 ```
 
-亦可在 DSH 插件页输入本地绝对路径安装。发布后可将路径替换为实际 npm 包名或 Git 仓库地址。当前仅声明兼容 DSH 0.2.1-alpha.1，其他版本需要另行测试，勿绕过兼容性限制。
+安装后正常重启对应 DSH profile（停止现有进程后执行 `dsh web`），并在插件管理器确认启用状态。其他 profile 请替换 `web`。亦可在 DSH 插件页输入此插件目录的本地绝对路径安装。当前仅声明兼容 DSH 0.2.1-alpha.1，其他版本需要另行测试，勿绕过兼容性限制。完整更新、卸载及多插件安装见 [仓库安装说明](../../README.md#安装)。
 
 ## 用户手动输入 Token
 
@@ -46,4 +50,4 @@ npm pack
 
 包文件白名单排除 `.env`、测试、缓存、node_modules。图标为本项目原创通用摄像机图形，不是腾讯商标。插件实现及说明重新编写；未复制官方 skill 源码或参考文件。依赖采用 DSH 已提供的 peer package，无 build scripts。
 
-公开源码仓库：https://github.com/sibetlyf/dsh-plugin-tencent-meeting 。尚未发布到 npm；dsh.so 市场收录状态以平台审核结果为准。真实腾讯接口仅在用户手动配置 Token 后验证；自动测试只使用模拟响应，不读取用户秘密。
+统一源码仓库：[sibetlyf/dsh-plugins](https://github.com/sibetlyf/dsh-plugins/tree/main/plugins/dsh-plugin-tencent-meeting)。尚未发布到 npm；dsh.so 市场收录状态以平台审核结果为准。真实腾讯接口仅在用户手动配置 Token 后验证；自动测试只使用模拟响应，不读取用户秘密。
