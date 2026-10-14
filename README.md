@@ -57,7 +57,9 @@ dsh web
 | 美团 | 默认使用系统 Edge；在独立浏览器中人工登录、选择配送地址。不需要 API Key | 请 Agent 调用 `meituan_discover`；实际浏览功能需要可启动的浏览器 |
 | 腾讯会议 | 通过实例支持的安全凭据输入，或在启动终端设置 `DSH_TENCENT_MEETING_TOKEN`；个人 Token 从 [腾讯会议](https://meeting.tencent.com/ai-skill) 获取 | 请 Agent 调用 `tencent_meeting_discover`，参数 `{"statusOnly":true}` |
 
-**不是所有 DSH 都有通用凭据设置页面。** 本插件的 `keyRef`/`tokenRef` 只存引用名称，不能填真实密钥。缺少安全输入工具时，请在启动 DSH 的终端隐藏输入凭据；Windows PowerShell 和 Bash 命令见 [凭据配置步骤](AI-INSTALL.md#4-安全配置凭据)。已经运行的 DSH 不会收到另一个临时 shell 中新增的环境变量，需要用户从输入凭据的终端正常重新启动。
+**滴滴和腾讯会议 0.1.1 新增专用凭据界面。** 新版安装激活后，在 Web 设置的插件配置区域查找「滴滴打车凭据」或「腾讯会议凭据」，可隐藏输入、保存、删除和刷新配置状态。使用 DSH 凭据接口，不把密钥提交到 AI 对话或浏览器存储。页面中的引用名称必须与 Host 插件的 `keyRef`/`tokenRef` 一致；默认无需修改。DSH 默认保存到 `$DSH_HOME/.credentials.yaml`，不是加密保险库。启动环境变量优先且只读，需移除同名环境变量并重启后才能在界面保存。
+
+该界面依赖 Web 设置插槽和 `remote.credentials`；未支持这些能力的实例仍需以下回退方式。尚未完成真实 GUI 渲染/持久存储端到端验收，不将模拟测试等同于该验收。本插件的 `keyRef`/`tokenRef` 只存引用名称，不能填真实密钥。缺少安全输入工具时，请在启动 DSH 的终端隐藏输入凭据；Windows PowerShell 和 Bash 命令见 [凭据配置步骤](AI-INSTALL.md#4-安全配置凭据)。已经运行的 DSH 不会收到另一个临时 shell 中新增的环境变量，需要用户从输入凭据的终端正常重新启动。
 
 不要将 key、Token 或 Cookie 写入仓库、命令参数或发到聊天。美团安装会解析 Playwright 运行依赖，默认不下载浏览器；没有 Edge 时可改插件配置 `channel: chrome` 使用已安装的 Chrome。建议先使用这两个系统浏览器之一。若选择 `channel: chromium`，需要另行安装与插件所用 Playwright 版本匹配的 Chromium，参见 [Playwright 浏览器安装文档](https://playwright.dev/docs/browsers)。美团不导入或保存现有 Cookie。
 

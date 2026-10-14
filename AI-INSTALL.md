@@ -89,7 +89,11 @@ dsh plugin --profile PROFILE add ./plugins/dsh-plugin-tencent-meeting
 
 **并非所有 DSH 都有通用“凭据设置”页面。** 本仓库 Host 插件只声明凭据引用，不能据此声称 GUI 存在密钥输入框。`keyRef`/`tokenRef` 只保存名称，不可填真实秘密。
 
-### A. 当前实例有安全凭据输入工具
+### A. 本插件专用界面或当前实例安全输入工具
+
+滴滴/腾讯会议 0.1.1 包含 Web 凭据配置面板，注册在设置的 `plugins.item` 区域，标题为「滴滴打车凭据」「腾讯会议凭据」。先验证新版 client 已加载、该 slot 和 `remote.credentials` 可用，再指导用户在密码框输入并保存。不能仅凭 manifest 存在就宣称界面已显示。引用名称必须与 Host 配置一致，默认使用表中名称；修改界面引用不会自动修改 Host keyRef/tokenRef。
+
+界面通过 DSH `credentials.set/unset/describe` 保存/删除/查询，仅显示配置状态，不回读秘密。环境变量来源只读，失败不会显示服务器异常内容。保存后调用 statusOnly 验证宿主可见性，再只读发现验证有效性。不要用浏览器自动化截取含密钥的输入框截图。
 
 仅在可用工具明确支持安全输入、保存/引用并说明进程可见性时，使用该工具请用户输入 `DSH_DIDI_API_KEY` 或 `DSH_TENCENT_MEETING_TOKEN`。不要求用户把值发到普通聊天。
 

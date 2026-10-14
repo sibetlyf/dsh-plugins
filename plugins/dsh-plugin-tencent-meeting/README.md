@@ -16,6 +16,8 @@ dsh plugin --profile web add ./plugins/dsh-plugin-tencent-meeting
 
 ## 用户手动输入 Token
 
+0.1.1 新增 Web「腾讯会议凭据」设置面板：密码输入、保存、删除、配置状态和刷新。保存复用 DSH 本地凭据服务，Token 不进入 AI 对话或浏览器存储。默认引用 `DSH_TENCENT_MEETING_TOKEN` 必须与 Host `tokenRef` 一致；启动环境变量来源只读。参见 [凭据界面与回退配置](../../README.md#安装后的必要配置)。界面依赖 Web 设置服务，真实 GUI 渲染和持久保存端到端仍待用户安装后验收。
+
 1. 用户自行访问 https://meeting.tencent.com/ai-skill 获取个人 Token。
 2. 通过当前实例实际支持的安全凭据输入工具配置 `DSH_TENCENT_MEETING_TOKEN`，或在启动终端隐藏输入同名环境变量，再正常启动 DSH。并非所有版本都有通用凭据页面，不能假定插件设置一定带 Token 输入框。
 3. `tokenRef` 配置保存的是引用名称，不是 Token。不要将真实 Token 写入该字段、插件包或配置补丁。环境变量模式只在启动终端及子进程中生效，不自动持久保存。
