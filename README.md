@@ -8,6 +8,14 @@ DeepSeek Harness 第三方插件集合，各插件为独立可安装的 Cordis b
 | [美团外卖](plugins/dsh-plugin-meituan/README.md) | 独立浏览器搜索、菜单读取、审批后点击/加购 | 10 项自动化测试；真实登录/加购尚未验证 |
 | [腾讯会议](plugins/dsh-plugin-tencent-meeting/README.md) | 会议、录制、转写、纪要及审批后敏感操作 | 10 项客户端自动化测试 |
 
+## 让 DSH AI 帮你安装
+
+将以下请求发给目标 DSH 的 AI（按需删去不需要的插件）：
+
+> 请读取 https://github.com/sibetlyf/dsh-plugins/blob/main/AI-INSTALL.md ，按照该指南为当前 DSH 安装和配置滴滴、美团、腾讯会议插件。先确认实际 DSH 版本、profile、可用工具和权限，再执行。凭据请用安全输入，不要索要聊天明文；如必须由我重启或手动登录，请明确给出步骤。最后分别报告安装、激活、配置与只读连通状态，不要测试真实订单或其他敏感操作。
+
+完整 Agent 执行规范见 [AI 安装配置指南](AI-INSTALL.md)。该指南支持不同系统和工具可用性的分支，但不能绕过版本不兼容、用户权限、审批或缺少凭据等限制，不承诺所有 DSH 版本都能无人值守完成。
+
 ## 安装
 
 ### 前置条件
@@ -45,9 +53,11 @@ dsh web
 
 | 插件 | 必须完成的配置 | 首次验证 |
 |---|---|---|
-| 滴滴 | 在 DSH 凭据设置创建 `DSH_DIDI_API_KEY`，填入自己的 MCP Key；默认保持 `environment: sandbox` | 请 Agent 调用 `didi_discover`，参数 `{"statusOnly":true}`，随后发现官方工具 |
+| 滴滴 | 通过实例支持的安全凭据输入，或在启动终端设置 `DSH_DIDI_API_KEY`；默认保持 `environment: sandbox` | 请 Agent 调用 `didi_discover`，参数 `{"statusOnly":true}`，随后发现官方工具 |
 | 美团 | 默认使用系统 Edge；在独立浏览器中人工登录、选择配送地址。不需要 API Key | 请 Agent 调用 `meituan_discover`；实际浏览功能需要可启动的浏览器 |
-| 腾讯会议 | 在 DSH 凭据设置创建 `DSH_TENCENT_MEETING_TOKEN`，填入从 [腾讯会议](https://meeting.tencent.com/ai-skill) 获取的个人 Token | 请 Agent 调用 `tencent_meeting_discover`，参数 `{"statusOnly":true}` |
+| 腾讯会议 | 通过实例支持的安全凭据输入，或在启动终端设置 `DSH_TENCENT_MEETING_TOKEN`；个人 Token 从 [腾讯会议](https://meeting.tencent.com/ai-skill) 获取 | 请 Agent 调用 `tencent_meeting_discover`，参数 `{"statusOnly":true}` |
+
+**不是所有 DSH 都有通用凭据设置页面。** 本插件的 `keyRef`/`tokenRef` 只存引用名称，不能填真实密钥。缺少安全输入工具时，请在启动 DSH 的终端隐藏输入凭据；Windows PowerShell 和 Bash 命令见 [凭据配置步骤](AI-INSTALL.md#4-安全配置凭据)。已经运行的 DSH 不会收到另一个临时 shell 中新增的环境变量，需要用户从输入凭据的终端正常重新启动。
 
 不要将 key、Token 或 Cookie 写入仓库、命令参数或发到聊天。美团安装会解析 Playwright 运行依赖，默认不下载浏览器；没有 Edge 时可改插件配置 `channel: chrome` 使用已安装的 Chrome。建议先使用这两个系统浏览器之一。若选择 `channel: chromium`，需要另行安装与插件所用 Playwright 版本匹配的 Chromium，参见 [Playwright 浏览器安装文档](https://playwright.dev/docs/browsers)。美团不导入或保存现有 Cookie。
 

@@ -14,7 +14,7 @@ dsh plugin --profile web add ./plugins/dsh-plugin-didi
 
 安装后正常重启对应 DSH profile（停止现有进程后执行 `dsh web`），并在插件管理器确认启用状态。本包不包含安装脚本，不需要构建前端。其他 profile 请替换 `web`。完整更新、卸载及多插件安装见 [仓库安装说明](../../README.md#安装)。
 
-1. 在 DSH 凭据设置中创建 `DSH_DIDI_API_KEY`，填入你自己的滴滴 MCP Key。
+1. 通过当前实例实际支持的安全凭据输入工具配置 `DSH_DIDI_API_KEY`，或在启动终端隐藏输入同名环境变量再启动 DSH。没有通用凭据 UI 时不要寻找不存在的页面；具体命令与 AI 执行步骤见 [AI 安装配置指南](../../AI-INSTALL.md#4-安全配置凭据)。`keyRef` 只存引用名称，不填真实 key。
 2. 启用「滴滴打车」插件。配置默认 `environment: sandbox`。
 3. 先调用 `didi_discover({statusOnly:true})` 确认状态，再通过 `didi_discover` 查工具定义。
 4. 正式使用时**显式**将插件配置 `environment` 改为 `production`。生产下单会产生真实订单和费用。

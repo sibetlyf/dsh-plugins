@@ -17,9 +17,9 @@ dsh plugin --profile web add ./plugins/dsh-plugin-tencent-meeting
 ## 用户手动输入 Token
 
 1. 用户自行访问 https://meeting.tencent.com/ai-skill 获取个人 Token。
-2. 打开 DSH 插件设置中的 **腾讯会议**，在 `tokenRef` 对应的凭据输入控件中输入自己的 Token。默认凭据名称为 `DSH_TENCENT_MEETING_TOKEN`。
-3. `tokenRef` 配置保存的是引用名称，不是 Token。Token 保存在 DSH 本地凭据服务管理的存储中，不进入插件包、配置补丁或工具参数。
-4. 凭据 UI 若在当前版本不可用，可自行设置同名启动环境变量后重启 DSH。不应把 Token 发到聊天。
+2. 通过当前实例实际支持的安全凭据输入工具配置 `DSH_TENCENT_MEETING_TOKEN`，或在启动终端隐藏输入同名环境变量，再正常启动 DSH。并非所有版本都有通用凭据页面，不能假定插件设置一定带 Token 输入框。
+3. `tokenRef` 配置保存的是引用名称，不是 Token。不要将真实 Token 写入该字段、插件包或配置补丁。环境变量模式只在启动终端及子进程中生效，不自动持久保存。
+4. 隐藏输入命令、宿主/Agent shell 可见性说明与验证步骤见 [AI 安装配置指南](../../AI-INSTALL.md#4-安全配置凭据)。不应把 Token 发到聊天。
 
 插件不会自动迁移 `TENCENT_MEETING_TOKEN` 或旧 skill 的 `.env`；使用独立的新引用防止误用旧凭据。没有 Token 仍可安装并查看配置状态；首次真正查询才需要鉴权。
 
