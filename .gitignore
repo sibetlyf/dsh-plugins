@@ -1,0 +1,10 @@
+**/node_modules/
+**/.env
+**/.env.*
+**/*.tgz
+**/coverage/
+**/.venv/
+**/__pycache__/
+**/*credentials*
+**/auth_*.json
+**/cookies*.json
