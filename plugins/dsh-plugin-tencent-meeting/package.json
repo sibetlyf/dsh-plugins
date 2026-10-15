@@ -1,0 +1,17 @@
+{
+  "name": "dsh-plugin-tencent-meeting",
+  "version": "0.1.1",
+  "description": "Tencent Meeting tools with local user-supplied credentials and explicit approval for sensitive operations.",
+  "repository": { "type": "git", "url": "git+https://github.com/sibetlyf/dsh-plugins.git", "directory": "plugins/dsh-plugin-tencent-meeting" },
+  "homepage": "https://github.com/sibetlyf/dsh-plugins/tree/main/plugins/dsh-plugin-tencent-meeting#readme",
+  "bugs": { "url": "https://github.com/sibetlyf/dsh-plugins/issues" },
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "exports": { ".": "./index.js", "./client": "./settings.js", "./locale/*.json": "./locale/*.json", "./icon": "./icon.svg" },
+  "files": ["index.js", "client.js", "settings.js", "guide.md", "cordis.patch.yml", "locale/*.json", "icon.svg", "README.md", "LICENSE"],
+  "scripts": { "test": "node --test test/*.test.js", "check": "node --check index.js && node --check client.js && node --check settings.js" },
+  "peerDependencies": { "@deepseek-ai/dsh": "0.2.1-alpha.1", "@deepseek-ai/schemastery": "~3.18.5-alpha.1" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" }, "client": { "platform": "web", "inject": ["@deepseek-ai/dsh-client-locale", "@deepseek-ai/dsh-client-ui-settings", "@deepseek-ai/dsh-client-ui-plugin-manager", "@deepseek-ai/dsh-api-remotes"] } },
+  "keywords": ["dsh-plugin", "cordis", "tencent-meeting", "mcp"]
+}

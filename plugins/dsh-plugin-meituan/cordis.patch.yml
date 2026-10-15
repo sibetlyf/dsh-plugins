@@ -1,6 +1,0 @@
-- insert:
-    - id: meituan
-      name: dsh-plugin-meituan
-      config:
-        channel: msedge
-        headless: false

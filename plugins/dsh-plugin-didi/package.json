@@ -1,0 +1,14 @@
+{
+  "name": "dsh-plugin-didi",
+  "version": "0.1.1",
+  "description": "DiDi ride-hailing and maps for DeepSeek Harness with sandbox defaults and approval-gated orders.",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "exports": { ".": "./index.js", "./client": "./settings.js", "./locale/*.json": "./locale/*.json", "./icon": "./icon.svg" },
+  "files": ["index.js", "client.js", "settings.js", "guide.md", "cordis.patch.yml", "locale/*.json", "icon.svg", "README.md", "LICENSE"],
+  "scripts": { "test": "node --test test/*.test.js", "check": "node --check index.js && node --check client.js && node --check settings.js", "test:integration": "node scripts/integration.js" },
+  "peerDependencies": { "@deepseek-ai/dsh": "0.2.1-alpha.1", "@deepseek-ai/schemastery": "~3.18.5-alpha.1" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" }, "client": { "platform": "web", "inject": ["@deepseek-ai/dsh-client-locale", "@deepseek-ai/dsh-client-ui-settings", "@deepseek-ai/dsh-client-ui-plugin-manager", "@deepseek-ai/dsh-api-remotes"] } },
+  "keywords": ["dsh-plugin", "cordis", "didi", "mcp", "ride-hailing"]
+}
