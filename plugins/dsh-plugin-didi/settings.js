@@ -17,8 +17,19 @@ window.__ModuleLoader__.load({
       const validRef = /^[A-Z_][A-Z0-9_]*$/.test(ref);
       async function refresh() {
         const version = ++generation.current;
-        try { const values = await ctx.remote.credentials.describe([ref]); if (mounted.current && version === generation.current) setInfo(values[ref] ?? null); }
-        catch { if (mounted.current && version === generation.current) { setInfo(null); setMessage(t('failed')); } }
+        try {
+          // 一元 Remote 调用永不 reject：失败在 result.ok 上，结果在 result.value 里。
+          const result = await ctx.remote.credentials.describe([ref]);
+          if (!result.ok) throw result.error;
+          if (!mounted.current || version !== generation.current) return;
+          const entry = result.value?.[ref];
+          setInfo(entry ?? null);
+          if (!entry) setMessage(`${t('failed')} [describe 未返回 ${ref} 的条目]`);
+        } catch (error) {
+          if (!mounted.current || version !== generation.current) return;
+          setInfo(null);
+          setMessage(`${t('failed')} [${error?.code ?? error?.message ?? String(error)}]`);
+        }
       }
       useEffect(() => { mounted.current = true; return () => { mounted.current = false; generation.current++; if (input.current) input.current.value = ''; }; }, []);
       useEffect(() => {
@@ -32,13 +43,17 @@ window.__ModuleLoader__.load({
         if (remove && !window.confirm(t('confirm'))) return;
         setBusy(true); setMessage('');
         try {
-          if (remove) await ctx.remote.credentials.unset(ref);
-          else await ctx.remote.credentials.set(ref, input.current.value);
+          const result = remove
+            ? await ctx.remote.credentials.unset(ref)
+            : await ctx.remote.credentials.set(ref, input.current.value);
+          if (!result.ok) throw result.error;
           if (mounted.current) { if (input.current) input.current.value = ''; setMessage(t(remove ? 'removed' : 'saved')); await refresh(); }
-        } catch { if (mounted.current) { if (input.current) input.current.value = ''; setMessage(t('failed')); } }
+        } catch (error) { if (mounted.current) { if (input.current) input.current.value = ''; setMessage(`${t('failed')} [${error?.code ?? error?.message ?? String(error)}]`); } }
         finally { if (mounted.current) setBusy(false); }
       }
-      const locked = busy || !validRef || !info || info.writable !== true;
+      // 状态没取回来（info === null）时不再锁死输入框：否则 describe 一次失败就永远配不上。
+      // 只有明确只读（writable === false，即启动环境变量提供）才锁。
+      const locked = busy || !validRef || info?.writable === false;
       return h('section', { style: { maxWidth: 640, display: 'grid', gap: 12, color: 'inherit' } },
         h('h3', null, t('title')),
         h('label', null, t('ref'), h('input', { type: 'text', value: ref, disabled: busy, onChange: e => setRef(e.target.value), style: { display: 'block', width: '100%' } })),
