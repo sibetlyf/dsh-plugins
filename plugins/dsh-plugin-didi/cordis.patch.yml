@@ -1,7 +1,0 @@
-- insert:
-    - id: didi
-      name: dsh-plugin-didi
-      config:
-        keyRef: DSH_DIDI_API_KEY
-        environment: sandbox
-        timeoutMs: 60000

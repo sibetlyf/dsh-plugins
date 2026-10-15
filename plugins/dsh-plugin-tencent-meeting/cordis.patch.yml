@@ -1,6 +1,0 @@
-- insert:
-    - id: tencent-meeting
-      name: dsh-plugin-tencent-meeting
-      config:
-        tokenRef: DSH_TENCENT_MEETING_TOKEN
-        timeoutMs: 60000
