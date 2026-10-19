@@ -1,0 +1,42 @@
+{
+  "name": "dsh-plugin-gateway",
+  "version": "0.1.0",
+  "description": "nanoMuse Gateway connection and remote device control plugin for DeepSeek Harness Web",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./settings.js"
+  },
+  "files": [
+    "index.js",
+    "settings.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh": "0.2.1-alpha.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ]
+    }
+  },
+  "keywords": [
+    "dsh-plugin",
+    "cordis",
+    "gateway",
+    "remote-devices"
+  ]
+}

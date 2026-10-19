@@ -7,6 +7,7 @@ DeepSeek Harness 第三方插件集合，各插件为独立可安装的 Cordis b
 | [滴滴打车](plugins/dsh-plugin-didi/README.md) | 地点搜索、路线、价格预估、App 链接、审批后订单管理 | 22 项自动化测试；官方 Sandbox 只读联调通过 |
 | [美团外卖](plugins/dsh-plugin-meituan/README.md) | 独立浏览器搜索、菜单读取、审批后点击/加购 | 10 项自动化测试；真实登录/加购尚未验证 |
 | [腾讯会议](plugins/dsh-plugin-tencent-meeting/README.md) | 会议、录制、转写、纪要及审批后敏感操作 | 10 项客户端自动化测试 |
+| [网关与远程设备](plugins/dsh-plugin-gateway/README.md) | nanoMuse 网关长连接、健康探测、跨端远程设备协同操作（截屏、Shell、通知） | 已完成 DSH 0.2.1-alpha.1 官方 Web 激活与连通验证 |
 
 ## 让 DSH AI 帮你安装
 
@@ -35,6 +36,7 @@ cd dsh-plugins
 dsh plugin --profile web add ./plugins/dsh-plugin-didi
 dsh plugin --profile web add ./plugins/dsh-plugin-meituan
 dsh plugin --profile web add ./plugins/dsh-plugin-tencent-meeting
+dsh plugin --profile web add ./plugins/dsh-plugin-gateway
 ```
 
 只安装其中一个时，仅执行对应的 `add` 命令。相对路径以当前终端所在目录为准，上述命令要求在克隆后的仓库根目录执行。命令由 DSH 管理 profile 依赖与 bundle 选择，无需手动编辑 profile 配置。
