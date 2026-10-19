@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: 'dsh-gateway',
+  id: 'dsh-plugin-gateway',
   factory: require => {
     const React = require('react');
     const { createElement: h, useState, useEffect } = React;
@@ -270,27 +270,31 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots', 'locale'],
       apply(ctx) {
-        // 1. 注册到 plugins.item (插件管理面板)
+        // 1. 注册到 plugins.item (插件列表页面)
         ctx.effect(() => ctx.slots.inject('plugins.item', () =>
           ctx.slots.register({
             name: 'plugins.item',
-            id: 'dsh-gateway-panel',
+            id: 'dsh-plugin-gateway-panel',
             order: 50,
             label: () => 'nanoMuse 网关与设备',
             inject: () => ({ ctx }),
           }, GatewayPanel)
         ));
 
-        // 2. 注册到 settings.section (设置面板)
-        ctx.effect(() => ctx.slots.inject('settings.section', () =>
-          ctx.slots.register({
-            name: 'settings.section',
-            id: 'dsh-gateway-settings',
-            order: 34,
-            label: () => 'nanoMuse 网关与设备',
-            inject: () => ({ ctx }),
-          }, GatewayPanel)
-        ));
+        // 2. 注册到 settings.section (设置中心通用面板)
+        ctx.effect(() => {
+          try {
+            ctx.slots.inject('settings.section', () =>
+              ctx.slots.register({
+                name: 'settings.section',
+                id: 'dsh-plugin-gateway-settings',
+                order: 34,
+                label: () => 'nanoMuse 网关与设备',
+                inject: () => ({ ctx }),
+              }, GatewayPanel)
+            );
+          } catch { }
+        });
       },
     };
   },

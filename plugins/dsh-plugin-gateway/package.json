@@ -1,5 +1,5 @@
 {
-  "name": "dsh-gateway",
+  "name": "dsh-plugin-gateway",
   "version": "0.1.0",
   "description": "nanoMuse Gateway connection and remote device control plugin for DeepSeek Harness Web",
   "type": "module",

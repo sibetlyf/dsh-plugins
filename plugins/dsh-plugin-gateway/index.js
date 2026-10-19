@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 
-export const name = 'dsh-gateway'
+export const name = 'dsh-plugin-gateway'
 export const inject = ['tools']
 
 const API_PREFIX = '/nanomuse/gateway'
