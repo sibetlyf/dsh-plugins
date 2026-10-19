@@ -228,7 +228,7 @@ export async function apply(ctx, config = {}) {
     tools.register({
       name: 'devices',
       description: '获取当前在 nanoMuse 网关上连接的所有远程设备（手机、远程服务器、其他 PC 等）的列表与在线状态。',
-      parameters: {},
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
       output: defaultOutput,
       isConcurrencySafe: () => true,
       execute: async () => {
@@ -246,10 +246,15 @@ export async function apply(ctx, config = {}) {
       name: 'device_shell',
       description: '在指定的远程设备（如远程服务器、另一台电脑或手机）上执行 shell 命令行指令并返回结果。',
       parameters: {
-        device: { type: 'string', description: '目标设备名称、ID，或填 "phone" 代表手机。留空使用唯一绑定的其他设备。' },
-        command: { type: 'string', required: true, description: '要执行的 shell 命令' },
-        cwd: { type: 'string', description: '远程工作目录路径' },
-        timeout: { type: 'integer', description: '超时秒数，默认 60' },
+        type: 'object',
+        properties: {
+          device: { type: 'string', description: '目标设备名称、ID，或填 "phone" 代表手机。留空使用唯一绑定的其他设备。' },
+          command: { type: 'string', description: '要执行的 shell 命令' },
+          cwd: { type: 'string', description: '远程工作目录路径' },
+          timeout: { type: 'integer', description: '超时秒数，默认 60' },
+        },
+        required: ['command'],
+        additionalProperties: false,
       },
       output: defaultOutput,
       timeoutMs: 120_000,
@@ -266,9 +271,14 @@ export async function apply(ctx, config = {}) {
       name: 'device_notify',
       description: '向指定的远程设备（如手机或电脑桌面）推送一条系统弹窗提醒通知。',
       parameters: {
-        device: { type: 'string', description: '目标设备名称或 ID，留空使用唯一绑定的其他设备。' },
-        title: { type: 'string', required: true, description: '通知标题' },
-        body: { type: 'string', required: true, description: '通知正文' },
+        type: 'object',
+        properties: {
+          device: { type: 'string', description: '目标设备名称或 ID，留空使用唯一绑定的其他设备。' },
+          title: { type: 'string', description: '通知标题' },
+          body: { type: 'string', description: '通知正文' },
+        },
+        required: ['title', 'body'],
+        additionalProperties: false,
       },
       output: defaultOutput,
       timeoutMs: 20_000,
@@ -283,7 +293,11 @@ export async function apply(ctx, config = {}) {
     tools.register({
       name: 'device_screen',
       description: '获取指定远程设备当前的屏幕截图。',
-      parameters: { device: { type: 'string', description: '目标设备名称或 ID。' } },
+      parameters: {
+        type: 'object',
+        properties: { device: { type: 'string', description: '目标设备名称或 ID。' } },
+        additionalProperties: false,
+      },
       output: defaultOutput,
       timeoutMs: 45_000,
       execute: async (args) => {
