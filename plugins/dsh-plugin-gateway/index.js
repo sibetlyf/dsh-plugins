@@ -31,6 +31,7 @@ async function loadStoredConfig() {
   return {
     baseURL: process.env.NANOMUSE_CLOUD_URL || 'http://127.0.0.1:8790',
     identifier: 'admin',
+    password: 'admin123',
     lastToken: '',
     deviceId: randomUUID(),
   }
@@ -44,8 +45,9 @@ async function saveStoredConfig(cfg) {
 }
 
 class HubClient {
-  constructor(options) {
+  constructor(options, ctx = null) {
     this.options = options
+    this.ctx = ctx
     this.deviceId = options.deviceId || randomUUID()
     this.deviceName = 'DSH Web Client'
     this.ws = null
@@ -55,6 +57,7 @@ class HubClient {
     this.pendingCalls = new Map()
     this.pingTimer = null
     this.reconnectTimer = null
+    this.onBadKey = null  // 收到 bad_key 时的回调
   }
 
   update(opts) {
@@ -105,7 +108,7 @@ class HubClient {
             kind: 'computer',
             os: process.platform,
             version: '1.0.0',
-            actions: ['ping', 'info', 'notify', 'shell', 'open'],
+            actions: ['ping', 'info', 'notify', 'shell', 'open', 'task'],
           },
         }))
 
@@ -124,6 +127,11 @@ class HubClient {
             if (Array.isArray(msg.devices)) {
               this.devices = msg.devices
             }
+          } else if (msg.type === 'error' && msg.code === 'bad_key') {
+            // Token 已失效，触发自动重新认证
+            this.connected = false
+            this.stop()
+            if (typeof this.onBadKey === 'function') this.onBadKey()
           } else if (msg.type === 'devices' && Array.isArray(msg.devices)) {
             this.devices = msg.devices
           } else if ((msg.type === 'result' || msg.type === 'error') && msg.id) {
@@ -202,6 +210,45 @@ class HubClient {
               } else {
                 replyError('缺少 url 参数')
               }
+            } else if (action === 'task') {
+              const taskText = String(body.text || body.prompt || body.command || '').trim()
+              if (!taskText) return replyError('任务内容不能为空')
+              const fromName = msg.from?.name || msg.from?.id || '远程设备'
+
+              // 尝试通过 DSH sessionController 新建会话并唤醒 Agent
+              const sc = this.ctx?.get?.('sessionController') || this.ctx?.sessionController
+              if (sc && typeof sc.create === 'function') {
+                (async () => {
+                  try {
+                    const created = await sc.create({ agentPreset: 'default' })
+                    const sid = created.sessionId
+                    const title = `来自 ${fromName} 的任务`
+                    await sc.rename?.({ sessionId: sid, title }).catch(() => {})
+                    const resolved = await sc.resolveAgent?.(sid)
+                    if (resolved && resolved.agent) {
+                      resolved.agent.followup({
+                        role: 'user',
+                        content: [{ type: 'text', text: `[来自远程设备 ${fromName} 的任务]\n${taskText}` }]
+                      })
+                      reply({ ok: true, delegated: true, sessionId: sid, message: `任务已创建会话 [${title}] 并交给本地 Agent 执行` })
+                      return
+                    }
+                    reply({ ok: true, delegated: true, sessionId: sid })
+                  } catch (err) {
+                    replyError(`新建会话执行失败: ${err?.message || err}`)
+                  }
+                })()
+              } else {
+                // 本地无完整会话控制器时，弹出系统通知提醒并回执
+                reply({ ok: true, delivered: true, message: `已在本地接收来自 ${fromName} 的任务` })
+                import('node:child_process').then(({ exec }) => {
+                  if (process.platform === 'win32') {
+                    const escaped = `来自 ${fromName} 的任务:\n${taskText}`.replace(/'/g, "''").replace(/"/g, '`"')
+                    const psCmd = `powershell -NoProfile -Command "[reflection.assembly]::loadwithpartialname('System.Windows.Forms'); [Windows.Forms.MessageBox]::Show('${escaped}', 'DSH 远程任务委托')"`
+                    exec(psCmd)
+                  }
+                }).catch(() => {})
+              }
             } else {
               replyError(`不支持的操作 action: ${action}`)
             }
@@ -267,10 +314,54 @@ export async function apply(ctx, config = {}) {
     baseURL: cfg.baseURL,
     token: cfg.lastToken || '',
     deviceId: cfg.deviceId,
-  })
+  }, ctx)
 
-  if (cfg.baseURL && cfg.lastToken) {
-    hub.start()
+  /**
+   * 自动连接：优先复用已保存的 Token；若 Token 被网关拒绝（bad_key），
+   * 则自动用已保存的 identifier + password 重新认证并获取新 Token。
+   */
+  async function autoConnect() {
+    if (!cfg.baseURL) return
+    const targetUrl = cfg.baseURL.replace(/\/+$/, '')
+
+    // 1. 若有已保存 Token，先尝试直接启动长连接（WebSocket 握手时网关会校验 key）
+    if (cfg.lastToken) {
+      hub.update({ baseURL: targetUrl, token: cfg.lastToken, deviceId: cfg.deviceId })
+      hub.start()
+      return
+    }
+
+    // 2. 无 Token 但有 identifier + password，自动静默认证
+    if (cfg.identifier) {
+      const password = cfg.password || ''
+      try {
+        const resp = await fetch(`${targetUrl}/v1/auth/credentials`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ identifier: cfg.identifier, password, device: 'DSH Web Client' }),
+          signal: AbortSignal.timeout(6000),
+        })
+        if (resp.ok) {
+          const data = await resp.json().catch(() => ({}))
+          if (data.api_key) {
+            cfg.lastToken = data.api_key
+            cfg.lastConnectedAt = Date.now()
+            await saveStoredConfig(cfg)
+            hub.update({ baseURL: targetUrl, token: cfg.lastToken, deviceId: cfg.deviceId })
+            hub.start()
+          }
+        }
+      } catch { }
+    }
+  }
+
+  await autoConnect()
+
+  // 监听 hub 连接错误：若 WebSocket 收到 bad_key，清除旧 Token 并重新认证
+  hub.onBadKey = async () => {
+    cfg.lastToken = ''
+    await saveStoredConfig(cfg)
+    await autoConnect()
   }
 
   // 1. 注册 Agent 跨设备工具
@@ -295,7 +386,7 @@ export async function apply(ctx, config = {}) {
     tools.register({
       name: 'devices',
       description: '获取当前在 nanoMuse 网关上连接的所有远程设备（手机、远程服务器、其他 PC 等）的列表与在线状态。',
-      parameters: { type: 'object', properties: {}, additionalProperties: false },
+      parameters: {},
       output: defaultOutput,
       isConcurrencySafe: () => true,
       execute: async () => {
@@ -313,15 +404,10 @@ export async function apply(ctx, config = {}) {
       name: 'device_shell',
       description: '在指定的远程设备（如远程服务器、另一台电脑或手机）上执行 shell 命令行指令并返回结果。',
       parameters: {
-        type: 'object',
-        properties: {
-          device: { type: 'string', description: '目标设备名称、ID，或填 "phone" 代表手机。留空使用唯一绑定的其他设备。' },
-          command: { type: 'string', description: '要执行的 shell 命令' },
-          cwd: { type: 'string', description: '远程工作目录路径' },
-          timeout: { type: 'integer', description: '超时秒数，默认 60' },
-        },
-        required: ['command'],
-        additionalProperties: false,
+        device: { type: 'string', description: '目标设备名称、ID，或填 "phone" 代表手机。留空使用唯一绑定的其他设备。' },
+        command: { type: 'string', required: true, description: '要执行的 shell 命令' },
+        cwd: { type: 'string', description: '远程工作目录路径' },
+        timeout: { type: 'integer', description: '超时秒数，默认 60' },
       },
       output: defaultOutput,
       timeoutMs: 120_000,
@@ -338,14 +424,9 @@ export async function apply(ctx, config = {}) {
       name: 'device_notify',
       description: '向指定的远程设备（如手机或电脑桌面）推送一条系统弹窗提醒通知。',
       parameters: {
-        type: 'object',
-        properties: {
-          device: { type: 'string', description: '目标设备名称或 ID，留空使用唯一绑定的其他设备。' },
-          title: { type: 'string', description: '通知标题' },
-          body: { type: 'string', description: '通知正文' },
-        },
-        required: ['title', 'body'],
-        additionalProperties: false,
+        device: { type: 'string', description: '目标设备名称或 ID，留空使用唯一绑定的其他设备。' },
+        title: { type: 'string', required: true, description: '通知标题' },
+        body: { type: 'string', required: true, description: '通知正文' },
       },
       output: defaultOutput,
       timeoutMs: 20_000,
@@ -360,11 +441,7 @@ export async function apply(ctx, config = {}) {
     tools.register({
       name: 'device_screen',
       description: '获取指定远程设备当前的屏幕截图。',
-      parameters: {
-        type: 'object',
-        properties: { device: { type: 'string', description: '目标设备名称或 ID。' } },
-        additionalProperties: false,
-      },
+      parameters: { device: { type: 'string', description: '目标设备名称或 ID。' } },
       output: defaultOutput,
       timeoutMs: 45_000,
       execute: async (args) => {
@@ -373,6 +450,23 @@ export async function apply(ctx, config = {}) {
         return { device: d.name, width: res.width ?? 0, height: res.height ?? 0, mime: res.mime ?? 'image/png', data: res.data ?? '' }
       },
       presentCall: (args) => ({ card: 'generic', title: `截取 ${args.device || '远程设备'} 屏幕`, kind: 'other', rawInput: args }),
+    })
+
+    tools.register({
+      name: 'device_task',
+      description: '委托另一台远程设备（如另外一台电脑或手机）上的 Agent 执行复杂的长期任务或新建对话。',
+      parameters: {
+        device: { type: 'string', description: '目标设备名称、ID，或填 "phone"。留空使用唯一绑定的其他设备。' },
+        prompt: { type: 'string', required: true, description: '要委托给对端设备执行的具体任务需求或提示词' },
+      },
+      output: defaultOutput,
+      timeoutMs: 60_000,
+      execute: async (args) => {
+        const d = target(args.device)
+        const res = await hub.call(d.id, 'task', { text: args.prompt }, 45_000)
+        return { ok: true, device: d.name, result: res }
+      },
+      presentCall: (args) => ({ card: 'generic', title: `向 ${args.device || '远程设备'} 委托任务`, kind: 'other', rawInput: args }),
     })
   }
 
@@ -427,22 +521,33 @@ export async function apply(ctx, config = {}) {
 
             if (req.method === 'POST' && route === '/connect') {
               const body = await readJson()
+
+              // 注销：清除本地 Token，停止长连接
+              if (body.__logout) {
+                cfg.lastToken = ''
+                cfg.password = ''
+                await saveStoredConfig(cfg)
+                hub.stop()
+                return sendJson(200, { ok: true, logged_out: true })
+              }
+
               const targetUrl = String(body.baseURL || cfg.baseURL).trim().replace(/\/+$/, '')
               const identifier = String(body.identifier || cfg.identifier || 'admin').trim()
-              const password = String(body.password || '')
+              const password = String(body.password || cfg.password || '').trim()
               const newPassword = String(body.new_password || '').trim()
 
               if (!targetUrl) {
                 return sendJson(400, { error: '网关地址为必填项' })
               }
 
-              let apiKey = 'nm_' + randomUUID().replaceAll('-', '')
-              let created = false
-              let pwdUpdated = false
-
-              // 尝试请求远端鉴权与改密接口
+              // 向网关认证，必须成功才保存 Token
               const payload = { identifier, password, device: 'DSH Web Client' }
               if (newPassword) payload.new_password = newPassword
+
+              let apiKey = null
+              let created = false
+              let pwdUpdated = false
+              let authError = null
 
               try {
                 const resp = await fetch(`${targetUrl}/v1/auth/credentials`, {
@@ -451,16 +556,26 @@ export async function apply(ctx, config = {}) {
                   body: JSON.stringify(payload),
                   signal: AbortSignal.timeout(6000),
                 })
-                if (resp.ok) {
-                  const data = await resp.json().catch(() => ({}))
-                  if (data.api_key) apiKey = data.api_key
+                const data = await resp.json().catch(() => ({}))
+                if (resp.ok && data.api_key) {
+                  apiKey = data.api_key
                   created = Boolean(data.created)
                   pwdUpdated = Boolean(data.password_updated)
+                } else {
+                  authError = data?.error?.message || data?.detail?.error?.message || `认证失败 (HTTP ${resp.status})`
                 }
-              } catch { }
+              } catch (err) {
+                return sendJson(502, { error: '无法连接到网关，请检查地址是否正确' })
+              }
 
+              if (!apiKey) {
+                return sendJson(400, { error: authError || '账号或密码错误，请检查后重试' })
+              }
+
+              // 认证成功，持久化保存（包括密码，用于 Token 失效后自动重连）
               cfg.baseURL = targetUrl
               cfg.identifier = identifier
+              cfg.password = newPassword || password  // 保存最新有效密码
               cfg.lastToken = apiKey
               cfg.lastConnectedAt = Date.now()
               cfg.deviceId = hub.deviceId

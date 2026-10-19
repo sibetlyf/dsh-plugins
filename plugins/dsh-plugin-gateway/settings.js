@@ -10,6 +10,7 @@ window.__ModuleLoader__.load({
       const [password, setPassword] = useState('');
       const [syncPassword, setSyncPassword] = useState(false);
       const [newPassword, setNewPassword] = useState('');
+      const [hasToken, setHasToken] = useState(false);
       const [busy, setBusy] = useState(false);
       const [testing, setTesting] = useState(false);
       const [status, setStatus] = useState(null);
@@ -23,6 +24,7 @@ window.__ModuleLoader__.load({
             const data = await res.json();
             if (data.baseURL) setBaseURL(data.baseURL);
             if (data.identifier) setIdentifier(data.identifier);
+            setHasToken(Boolean(data.lastToken));
           }
         } catch {}
 
@@ -79,8 +81,9 @@ window.__ModuleLoader__.load({
           setPassword('');
           setNewPassword('');
           setSyncPassword(false);
-          let tip = '网关连接成功！';
+          let tip = '网关连接成功！登录凭证已持久化，下次启动将自动连接。';
           if (data.password_updated) tip += ' 远端网关密码已同步加盐更新。';
+          setHasToken(true);
           setStatus({ type: 'success', text: tip });
           setTimeout(load, 1000);
         } catch (err) {
@@ -108,6 +111,23 @@ window.__ModuleLoader__.load({
 
       const isConnected = !!devicesData?.connected;
       const otherDevices = devicesData?.devices || [];
+      const statusText = isConnected ? '● 已连接' : (hasToken ? '◑ 已授权 (重连中)' : '○ 未连接');
+      const statusColor = isConnected ? '#16a34a' : (hasToken ? '#ea580c' : '#888');
+
+      async function disconnect() {
+        if (!window.confirm('确认断开当前网关连接？登录凭证将被清除，下次需要重新登录。')) return;
+        try {
+          await fetch('/nanomuse/gateway/connect', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ baseURL, identifier, password: '', __logout: true }),
+          });
+        } catch {}
+        setHasToken(false);
+        setDevicesData(null);
+        setStatus({ type: 'success', text: '已断开连接，下次启动将重新认证' });
+      }
+
 
       const cardStyle = {
         padding: '16px',
@@ -161,9 +181,7 @@ window.__ModuleLoader__.load({
         h('div', { style: cardStyle },
           h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } },
             h('span', { style: { fontWeight: 600, fontSize: '14px' } }, '网关长连接配置'),
-            h('span', { style: { fontSize: '12px', color: isConnected ? '#16a34a' : '#888' } },
-              isConnected ? '● 已连接' : '○ 未连接'
-            )
+            h('span', { style: { fontSize: '12px', color: statusColor } }, statusText)
           ),
 
           h('label', { style: { fontSize: '12px', fontWeight: 500 } }, '网关地址 (Gateway URL)',
@@ -178,7 +196,7 @@ window.__ModuleLoader__.load({
               h('input', { type: 'text', value: identifier, style: { ...inputStyle, marginTop: 4 }, onChange: e => setIdentifier(e.target.value) })
             ),
             h('label', { style: { flex: 1, fontSize: '12px', fontWeight: 500 } }, '连接密码 (Password)',
-              h('input', { type: 'password', value: password, style: { ...inputStyle, marginTop: 4 }, placeholder: '输入连接密码', onChange: e => setPassword(e.target.value) })
+              h('input', { type: 'password', value: password, style: { ...inputStyle, marginTop: 4 }, placeholder: hasToken ? '留空表示使用上次已保存密码' : '默认: admin123', onChange: e => setPassword(e.target.value) })
             )
           ),
 
@@ -206,8 +224,9 @@ window.__ModuleLoader__.load({
           }, status.text) : null,
 
           h('div', { style: { display: 'flex', gap: 8, marginTop: 4 } },
-            h('button', { type: 'button', style: btnPrimary, disabled: busy, onClick: saveConnect }, busy ? '保存连接中…' : '保存并连接网关'),
-            h('button', { type: 'button', style: btnOutline, onClick: load }, '刷新状态')
+            h('button', { type: 'button', style: btnPrimary, disabled: busy, onClick: saveConnect }, busy ? '保存连接中…' : (hasToken ? '重新连接 / 更新配置' : '登录并连接网关')),
+            h('button', { type: 'button', style: btnOutline, onClick: load }, '刷新状态'),
+            hasToken ? h('button', { type: 'button', style: { ...btnOutline, color: '#dc2626', borderColor: '#dc2626' }, onClick: disconnect }, '断开连接') : null
           )
         ),
 
