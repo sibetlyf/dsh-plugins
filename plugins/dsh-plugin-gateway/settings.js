@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: 'dsh-plugin-gateway',
+  id: 'dsh-gateway',
   factory: require => {
     const React = require('react');
     const { createElement: h, useState, useEffect } = React;
@@ -213,13 +213,19 @@ window.__ModuleLoader__.load({
 
         // 远程设备列表卡片
         h('div', { style: cardStyle },
-          h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } },
-            h('span', { style: { fontWeight: 600, fontSize: '14px' } }, '拓扑在线设备 (Remote Devices)'),
-            h('span', { style: { fontSize: '12px', opacity: 0.6 } }, `在线: ${otherDevices.filter(d => d.online).length} 台`)
+          h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 } },
+            h('span', { style: { fontWeight: 600, fontSize: '14px' } }, '账号设备拓扑 (同一账号在线设备)'),
+            h('div', { style: { fontSize: '12px', display: 'flex', gap: 8 } },
+              h('span', { style: { color: isConnected ? '#16a34a' : '#888' } }, `本机: ${devicesData?.this_device?.name || '电脑'} (${isConnected ? '在线' : '离线'})`),
+              h('span', { style: { opacity: 0.7 } }, `| 其他在线: ${otherDevices.filter(d => d.online).length} 台`)
+            )
           ),
+          devicesData?.this_device ? h('div', { style: { fontSize: '11px', opacity: 0.5, marginTop: -6 } },
+            `本机设备ID: ${devicesData.this_device.id}`
+          ) : null,
 
           otherDevices.length === 0 ? h('div', { style: { padding: '16px', textAlign: 'center', opacity: 0.6, fontSize: '13px' } },
-            '网关拓扑中暂无其他远程设备在线。手机或其他主机接入该网关后即可自动发现。'
+            isConnected ? '当前账号暂无其他远程设备在线（若有第二台设备，请确认两台设备的网关地址与账号完全一致，且设备ID不冲突）。' : '网关未连接，请先在上方配置并保存连接。'
           ) : h('div', { style: { display: 'grid', gap: 10 } },
             otherDevices.map(d => h('div', {
               key: d.id,
@@ -268,7 +274,7 @@ window.__ModuleLoader__.load({
         ctx.effect(() => ctx.slots.inject('plugins.item', () =>
           ctx.slots.register({
             name: 'plugins.item',
-            id: 'dsh-plugin-gateway-panel',
+            id: 'dsh-gateway-panel',
             order: 50,
             label: () => 'nanoMuse 网关与设备',
             inject: () => ({ ctx }),
@@ -279,7 +285,7 @@ window.__ModuleLoader__.load({
         ctx.effect(() => ctx.slots.inject('settings.section', () =>
           ctx.slots.register({
             name: 'settings.section',
-            id: 'dsh-plugin-gateway-settings',
+            id: 'dsh-gateway-settings',
             order: 34,
             label: () => 'nanoMuse 网关与设备',
             inject: () => ({ ctx }),

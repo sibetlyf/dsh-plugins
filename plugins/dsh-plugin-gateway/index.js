@@ -1,5 +1,5 @@
 /**
- * dsh-plugin-gateway: nanoMuse Gateway & Remote Device Control Plugin
+ * dsh-gateway: nanoMuse Gateway & Remote Device Control Plugin
  * 纯粹的 DSH 官方 Web 扩展插件：提供网关长连接与跨设备远程协同调度能力
  */
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 
-export const name = 'dsh-plugin-gateway'
+export const name = 'dsh-gateway'
 export const inject = ['tools']
 
 const API_PREFIX = '/nanomuse/gateway'
@@ -27,7 +27,7 @@ async function loadStoredConfig() {
     const data = await readFile(configPath(), 'utf8')
     const parsed = JSON.parse(data)
     if (parsed && typeof parsed === 'object') return parsed
-  } catch {}
+  } catch { }
   return {
     baseURL: process.env.NANOMUSE_CLOUD_URL || 'http://127.0.0.1:8790',
     identifier: 'admin',
@@ -40,7 +40,7 @@ async function saveStoredConfig(cfg) {
   try {
     await mkdir(join(dshHome(), 'nanomuse'), { recursive: true })
     await writeFile(configPath(), JSON.stringify(cfg, null, 2) + '\n', 'utf8')
-  } catch {}
+  } catch { }
 }
 
 class HubClient {
@@ -74,7 +74,7 @@ class HubClient {
     if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = null }
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null }
     if (this.ws) {
-      try { this.ws.close(1000, 'stopped') } catch {}
+      try { this.ws.close(1000, 'stopped') } catch { }
       this.ws = null
     }
     this.connected = false
@@ -121,6 +121,9 @@ class HubClient {
           const msg = JSON.parse(String(event.data))
           if (msg.type === 'welcome') {
             this.connected = true
+            if (Array.isArray(msg.devices)) {
+              this.devices = msg.devices
+            }
           } else if (msg.type === 'devices' && Array.isArray(msg.devices)) {
             this.devices = msg.devices
           } else if ((msg.type === 'result' || msg.type === 'error') && msg.id) {
@@ -136,7 +139,7 @@ class HubClient {
               ws.send(JSON.stringify({ type: 'result', id: msg.id, to: msg.from?.id, body: { pong: true, time: Date.now() } }))
             }
           }
-        } catch {}
+        } catch { }
       }
 
       ws.onclose = () => {
@@ -147,7 +150,7 @@ class HubClient {
       }
 
       ws.onerror = () => {
-        try { ws.close() } catch {}
+        try { ws.close() } catch { }
       }
     } catch {
       if (this.running) {
@@ -373,7 +376,7 @@ export async function apply(ctx, config = {}) {
                   created = Boolean(data.created)
                   pwdUpdated = Boolean(data.password_updated)
                 }
-              } catch {}
+              } catch { }
 
               cfg.baseURL = targetUrl
               cfg.identifier = identifier
@@ -420,6 +423,6 @@ export async function apply(ctx, config = {}) {
           }
         },
       })
-    }, 'dsh-plugin-gateway: webServer')
+    }, 'dsh-gateway: webServer')
   })
 }
