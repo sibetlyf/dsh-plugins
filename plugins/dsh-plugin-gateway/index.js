@@ -105,7 +105,7 @@ class HubClient {
             kind: 'computer',
             os: process.platform,
             version: '1.0.0',
-            actions: ['ping', 'info', 'notify'],
+            actions: ['ping', 'info', 'notify', 'shell', 'open'],
           },
         }))
 
@@ -135,8 +135,75 @@ class HubClient {
               else p.resolve(msg.body ?? {})
             }
           } else if (msg.type === 'call' && msg.id && ws.readyState === WebSocket.OPEN) {
-            if (msg.action === 'ping') {
-              ws.send(JSON.stringify({ type: 'result', id: msg.id, to: msg.from?.id, body: { pong: true, time: Date.now() } }))
+            const callId = msg.id
+            const fromId = msg.from?.id
+            const action = msg.action
+            const body = msg.body || msg.args || {}
+
+            const reply = (resBody) => {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'result', id: callId, to: fromId, body: resBody }))
+              }
+            }
+            const replyError = (errorMsg) => {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'error', id: callId, to: fromId, message: String(errorMsg) }))
+              }
+            }
+
+            if (action === 'ping') {
+              reply({ pong: true, time: Date.now(), host: process.env.COMPUTERNAME || 'localhost' })
+            } else if (action === 'info') {
+              reply({
+                name: this.deviceName,
+                kind: 'computer',
+                os: process.platform,
+                arch: process.arch,
+                node: process.version,
+                time: Date.now(),
+              })
+            } else if (action === 'notify') {
+              const title = String(body.title || 'DSH 远程控制提醒')
+              const text = String(body.body || body.message || '跨设备连接正常！')
+              // 关键：立即回复已送达，避免因为用户在对端未点击确认导致 15s 超时！
+              reply({ ok: true, delivered: true, time: Date.now() })
+
+              // 异步唤起本地通知弹窗（非阻塞）
+              import('node:child_process').then(({ exec }) => {
+                if (process.platform === 'win32') {
+                  const escapedText = text.replace(/'/g, "''").replace(/"/g, '`"')
+                  const escapedTitle = title.replace(/'/g, "''").replace(/"/g, '`"')
+                  const psCmd = `powershell -NoProfile -Command "[reflection.assembly]::loadwithpartialname('System.Windows.Forms'); [Windows.Forms.MessageBox]::Show('${escapedText}', '${escapedTitle}')"`
+                  exec(psCmd)
+                }
+              }).catch(() => {})
+            } else if (action === 'shell') {
+              const cmd = String(body.command || '').trim()
+              if (!cmd) return replyError('command 不能为空')
+              import('node:child_process').then(({ exec }) => {
+                const timeoutMs = (Number(body.timeout) || 30) * 1000
+                exec(cmd, { cwd: body.cwd || process.cwd(), timeout: timeoutMs }, (err, stdout, stderr) => {
+                  reply({
+                    exitCode: err ? (err.code ?? 1) : 0,
+                    stdout: stdout ? stdout.toString() : '',
+                    stderr: stderr ? stderr.toString() : '',
+                    timedOut: Boolean(err && err.killed),
+                  })
+                })
+              }).catch(err => replyError(err?.message || '无法执行 shell'))
+            } else if (action === 'open') {
+              const url = String(body.url || '')
+              if (url) {
+                import('node:child_process').then(({ exec }) => {
+                  const cmd = process.platform === 'win32' ? `start "" "${url}"` : `open "${url}"`
+                  exec(cmd)
+                  reply({ ok: true, opened: url })
+                }).catch(err => replyError(err?.message))
+              } else {
+                replyError('缺少 url 参数')
+              }
+            } else {
+              replyError(`不支持的操作 action: ${action}`)
             }
           }
         } catch { }
