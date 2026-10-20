@@ -8,7 +8,13 @@ import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 
 export const name = 'dsh-plugin-gateway'
-export const inject = ['tools']
+export const inject = {
+  required: ['tools'],
+  optional: ['sessionController']
+}
+
+// 全局活跃的远程 DSH 任务映射: sessionId -> { callId, fromId, ws, finalOutput, timer }
+const activeTasks = new Map()
 
 const API_PREFIX = '/nanomuse/gateway'
 
@@ -215,51 +221,90 @@ class HubClient {
               if (!taskText) return replyError('任务内容不能为空')
               const fromName = msg.from?.name || msg.from?.id || '远程设备'
 
-              // 关键设计：立即回复发起端任务已被成功接单（避免大模型推理或异步等待导致超时！）
-              reply({
-                ok: true,
-                accepted: true,
-                task: taskText.slice(0, 60),
-                message: `[${this.deviceName}] 已成功接收来自 ${fromName} 的任务并开始执行`
-              })
+              // 先发一个 event 告知发起方已成功接单
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'event',
+                  id: callId,
+                  to: fromId,
+                  body: { stage: 'accepted', message: `[${this.deviceName}] 已接收任务，正在启动 DSH Agent 执行...` }
+                }))
+              }
 
-              // 异步唤起本地 DSH 会话与 Agent 执行（非阻塞）
-              (async () => {
-                try {
-                  const sc = this.ctx?.get?.('sessionController') || this.ctx?.sessionController
-                  if (sc && typeof sc.create === 'function') {
-                    // 兼容模式创建会话：不限定不存在的 preset
+              // 尝试使用本地 DSH sessionController 创建新会话并运行 Agent
+              const sc = this.ctx?.get?.('sessionController') || this.ctx?.sessionController
+              if (sc && typeof sc.create === 'function') {
+                (async () => {
+                  try {
                     let created = await sc.create({}).catch(() => null)
                     if (!created) {
                       created = await sc.create({ agentPreset: 'default' }).catch(() => null)
                     }
-                    if (created && created.sessionId) {
-                      const sid = created.sessionId
-                      const title = `来自 ${fromName} 的任务`
-                      await sc.rename?.({ sessionId: sid, title }).catch(() => {})
-                      const resolved = await sc.resolveAgent?.(sid).catch(() => null)
-                      if (resolved && resolved.agent) {
-                        resolved.agent.followup({
-                          role: 'user',
-                          content: [{ type: 'text', text: `[来自远程设备 ${fromName} 的任务]\n${taskText}` }]
+                    if (!created || !created.sessionId) {
+                      return replyError('无法创建 DSH 会话: sessionController 返回空会话')
+                    }
+
+                    const sid = created.sessionId
+                    const title = `来自 ${fromName} 的任务`
+                    await sc.rename?.({ sessionId: sid, title }).catch(() => {})
+
+                    // 120 秒超时计时器，若 Agent 在超时时间内未结束则返回当前已收集到的输出
+                    const taskTimer = setTimeout(() => {
+                      if (activeTasks.has(sid)) {
+                        const t = activeTasks.get(sid)
+                        activeTasks.delete(sid)
+                        reply({
+                          ok: true,
+                          text: t.finalOutput || '(等待 DSH Agent 回答超时，会话仍在本地后台执行)',
+                          sessionId: sid,
+                          timedOut: true
                         })
                       }
-                      return
-                    }
-                  }
+                    }, 120_000)
 
-                  // 本地环境无会话控制器时，弹出系统通知提醒
-                  import('node:child_process').then(({ exec }) => {
-                    if (process.platform === 'win32') {
-                      const escaped = `来自 ${fromName} 的远程任务:\n${taskText}`.replace(/'/g, "''").replace(/"/g, '`"')
-                      const psCmd = `powershell -NoProfile -Command "[reflection.assembly]::loadwithpartialname('System.Windows.Forms'); [Windows.Forms.MessageBox]::Show('${escaped}', 'DSH 远程任务通知')"`
-                      exec(psCmd)
+                    activeTasks.set(sid, {
+                      callId,
+                      fromId,
+                      ws,
+                      sessionId: sid,
+                      finalOutput: '',
+                      timer: taskTimer,
+                    })
+
+                    const resolved = await sc.resolveAgent?.(sid).catch(() => null)
+                    if (resolved && resolved.agent) {
+                      const userMsg = {
+                        id: randomUUID(),
+                        role: 'user',
+                        content: [{ type: 'text', text: `[来自远程设备 ${fromName} 的任务委托]\n${taskText}` }],
+                        source: { kind: 'user' }
+                      }
+                      resolved.agent.followup(userMsg)
+                    } else {
+                      clearTimeout(taskTimer)
+                      activeTasks.delete(sid)
+                      replyError('未能成功解析并加载该会话的 Agent')
                     }
-                  }).catch(() => {})
-                } catch (e) {
-                  // 捕获异常
-                }
-              })()
+                  } catch (err) {
+                    replyError(`DSH 任务调度失败: ${err?.message || err}`)
+                  }
+                })()
+              } else {
+                // 本地无完整会话控制器时（轻量端点），弹出通知并返回明确说明
+                import('node:child_process').then(({ exec }) => {
+                  if (process.platform === 'win32') {
+                    const escaped = `来自 ${fromName} 的远程任务:\n${taskText}`.replace(/'/g, "''").replace(/"/g, '`"')
+                    const psCmd = `powershell -NoProfile -Command "[reflection.assembly]::loadwithpartialname('System.Windows.Forms'); [Windows.Forms.MessageBox]::Show('${escaped}', 'DSH 远程任务通知')"`
+                    exec(psCmd)
+                  }
+                }).catch(() => {})
+
+                reply({
+                  ok: true,
+                  text: `[本地提示] 目标电脑已成功接收任务: "${taskText}"。当前客户端实例作为轻量端点运行，建议启动完整 DSH 工作区环境以获得 AI Agent 交互。`,
+                  device: this.deviceName
+                })
+              }
             } else {
               replyError(`不支持的操作 action: ${action}`)
             }
@@ -373,6 +418,72 @@ export async function apply(ctx, config = {}) {
     cfg.lastToken = ''
     await saveStoredConfig(cfg)
     await autoConnect()
+  }
+
+  // 监听 DSH 会话事件流，实时将本地 Agent 思考输出与最终回答完整转送回调用端
+  if (typeof ctx.on === 'function') {
+    ctx.on('session/event', (session, event) => {
+      if (!session || !event) return
+      const task = activeTasks.get(session.id)
+      if (!task) return
+
+      const { callId, fromId, ws } = task
+
+      // 1. 中间工具调用事件
+      if (event.type === 'tool/call') {
+        const { name, arguments: args } = event.data || {}
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          const shownArgs = typeof args === 'string' ? args.slice(0, 160) : JSON.stringify(args || '').slice(0, 160)
+          ws.send(JSON.stringify({
+            type: 'event',
+            id: callId,
+            to: fromId,
+            body: { stage: 'tool', name: name || 'tool', args: shownArgs }
+          }))
+        }
+      }
+      // 2. 中间模型输出事件 (assistant/message)
+      else if (event.type === 'assistant/message') {
+        const content = event.data?.message?.content
+        let text = ''
+        if (Array.isArray(content)) {
+          text = content.map((b) => (b.type === 'text' ? b.text : '')).filter(Boolean).join('\n')
+        } else if (typeof content === 'string') {
+          text = content
+        }
+        if (text) {
+          task.finalOutput = text
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: 'event',
+              id: callId,
+              to: fromId,
+              body: { stage: 'text', text, interim: true }
+            }))
+          }
+        }
+      }
+      // 3. 模型执行完毕 (turn/end)
+      else if (event.type === 'turn/end') {
+        clearTimeout(task.timer)
+        activeTasks.delete(session.id)
+        const finalAnswer = task.finalOutput || '(DSH Agent 已完成操作)'
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'result',
+            id: callId,
+            to: fromId,
+            body: {
+              ok: true,
+              text: finalAnswer,
+              sessionId: session.id,
+              device: hub.deviceName,
+              completed: true
+            }
+          }))
+        }
+      }
+    })
   }
 
   // 1. 注册 Agent 跨设备工具
