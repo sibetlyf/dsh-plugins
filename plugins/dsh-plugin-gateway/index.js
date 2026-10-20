@@ -2,10 +2,11 @@
  * dsh-gateway: nanoMuse Gateway & Remote Device Control Plugin
  * 纯粹的 DSH 官方 Web 扩展插件：提供网关长连接与跨设备远程协同调度能力
  */
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
+import { exec } from 'node:child_process'
 
 export const name = 'dsh-plugin-gateway'
 export const inject = ['tools']
@@ -14,6 +15,166 @@ export const inject = ['tools']
 const activeTasks = new Map()
 
 const API_PREFIX = '/nanomuse/gateway'
+
+/** 本机设备在网关拓扑中的展示名（@提及的 origin 也用它） */
+const SELF_DEVICE_NAME = 'DSH Web Client'
+
+/** @提及转发记录上限（内存环形缓冲，供设置面板与对话 Dock 读取） */
+const MAX_MENTION_RECORDS = 60
+/** 客户端诊断日志上限（无浏览器控制台时用于验证 UI 注册结果） */
+const MAX_CLIENT_LOGS = 120
+
+const mentionRecords = []
+const clientLogs = []
+
+function recordMention(entry) {
+  mentionRecords.unshift(entry)
+  if (mentionRecords.length > MAX_MENTION_RECORDS) mentionRecords.length = MAX_MENTION_RECORDS
+  return entry
+}
+
+function patchMention(id, patch) {
+  const record = mentionRecords.find((item) => item.id === id)
+  if (record) Object.assign(record, patch)
+  return record
+}
+
+function listMentions(limit) {
+  const size = Math.max(1, Math.min(Number(limit) || 20, MAX_MENTION_RECORDS))
+  return mentionRecords.slice(0, size)
+}
+
+function recordClientLog(entry) {
+  clientLogs.unshift({ ...entry, time: Date.now() })
+  if (clientLogs.length > MAX_CLIENT_LOGS) clientLogs.length = MAX_CLIENT_LOGS
+}
+
+/**
+ * 生成 @ 提及用的稳定 handle：设备名可能含空格/符号，而 @ 令牌以空白终止，
+ * 因此 handle 只保留字母、数字、下划线与连字符。
+ */
+function sanitizeHandle(name, id) {
+  const raw = String(name ?? '').trim()
+  let handle = raw.replace(/\s+/gu, '-').replace(/[^\p{L}\p{N}_-]/gu, '').slice(0, 32)
+  if (!handle) handle = String(id ?? '').slice(0, 8) || 'device'
+  return handle
+}
+
+/** 给网关上除本机以外的设备补上唯一 handle，并过滤掉纯 Web 连接。 */
+function decorateDevices(list, selfId) {
+  const used = new Map()
+  const out = []
+  for (const device of Array.isArray(list) ? list : []) {
+    if (!device || typeof device.id !== 'string') continue
+    if (device.id === selfId || device.kind === 'web') continue
+    let handle = sanitizeHandle(device.name, device.id)
+    const key = handle.toLowerCase()
+    const seen = used.get(key) ?? 0
+    used.set(key, seen + 1)
+    if (seen > 0) handle = `${handle}-${seen + 1}`
+    out.push({ ...device, handle })
+  }
+  return out
+}
+
+/** 从消息文本里解析出被 @ 的设备（大小写不敏感，按 handle 匹配）。 */
+function parseMentions(text, devices) {
+  const map = new Map()
+  for (const device of Array.isArray(devices) ? devices : []) map.set(String(device.handle).toLowerCase(), device)
+  const found = []
+  const pattern = /@([\p{L}\p{N}_-]+)/gu
+  for (const match of String(text ?? '').matchAll(pattern)) {
+    const device = map.get(match[1].toLowerCase())
+    if (device && !found.some((item) => item.id === device.id)) found.push(device)
+  }
+  return found
+}
+
+/** 把转发目标自身的 @handle 令牌从正文里移除，避免对端再次解析成提及。 */
+function stripMentionTokens(text, devices) {
+  const handles = new Set((Array.isArray(devices) ? devices : []).map((d) => String(d.handle).toLowerCase()))
+  if (handles.size === 0) return String(text ?? '')
+  return String(text ?? '')
+    .replace(/@([\p{L}\p{N}_-]+)/gu, (full, token) => (handles.has(String(token).toLowerCase()) ? ' ' : full))
+    .replace(/[ \t]{2,}/gu, ' ')
+    .trim()
+}
+
+/** 取用户消息中的纯文本内容。 */
+function messageText(message) {
+  const content = message?.content
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((block) => (block && block.type === 'text' && typeof block.text === 'string' ? block.text : ''))
+    .filter(Boolean)
+    .join('\n')
+    .trim()
+}
+
+/**
+ * 以 -EncodedCommand 方式执行 PowerShell 脚本：脚本以 UTF-16LE + Base64 传递，
+ * 彻底避开 cmd.exe / PowerShell 的多层引号与 `$` 展开问题。
+ */
+function runPowerShell(script, timeoutMs = 20000) {
+  const encoded = Buffer.from(script, 'utf16le').toString('base64')
+  return new Promise((resolve, reject) => {
+    exec(
+      `powershell -NoProfile -NonInteractive -EncodedCommand ${encoded}`,
+      { timeout: timeoutMs, windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error) {
+          error.stderr = String(stderr || '')
+          return reject(error)
+        }
+        resolve(String(stdout || ''))
+      },
+    )
+  })
+}
+
+/** 本机通知：Windows 走 MessageBox，其它平台退化为日志。 */
+function showLocalNotice(title, text) {
+  if (process.platform !== 'win32') return
+  const quote = (value) => `'${String(value ?? '').replace(/'/g, "''")}'`
+  const script = [
+    "[reflection.assembly]::loadwithpartialname('System.Windows.Forms') | Out-Null",
+    `[Windows.Forms.MessageBox]::Show(${quote(text)}, ${quote(title)})`,
+  ].join('; ')
+  runPowerShell(script, 120000).catch(() => {})
+}
+
+/** 捕获本机主屏，返回 PNG base64（仅 Windows）。 */
+function captureScreen() {
+  if (process.platform !== 'win32') return Promise.reject(new Error('当前平台不支持截屏'))
+  const file = join(tmpdir(), `dsh-gateway-screen-${randomUUID().slice(0, 8)}.png`)
+  const script = [
+    '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+    'Add-Type -AssemblyName System.Windows.Forms',
+    'Add-Type -AssemblyName System.Drawing',
+    '$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds',
+    '$bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height',
+    '$g = [System.Drawing.Graphics]::FromImage($bmp)',
+    '$g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)',
+    // 单引号字符串里反斜杠是字面量，直接写入真实路径
+    `$bmp.Save('${file}', [System.Drawing.Imaging.ImageFormat]::Png)`,
+    '$g.Dispose()',
+    '$bmp.Dispose()',
+    "Write-Output ($b.Width.ToString() + 'x' + $b.Height.ToString())",
+  ].join('; ')
+  return (async () => {
+    try {
+      const stdout = await runPowerShell(script, 25000)
+      const [width, height] = String(stdout).trim().split('x').map((part) => Number(part) || 0)
+      const buffer = await readFile(file)
+      await unlink(file).catch(() => {})
+      return { width, height, mime: 'image/png', data: buffer.toString('base64') }
+    } catch (failure) {
+      await unlink(file).catch(() => {})
+      throw failure
+    }
+  })()
+}
 
 function dshHome() {
   const configured = process.env.DSH_HOME
@@ -52,7 +213,7 @@ class HubClient {
     this.options = options
     this.ctx = ctx
     this.deviceId = options.deviceId || randomUUID()
-    this.deviceName = 'DSH Web Client'
+    this.deviceName = SELF_DEVICE_NAME
     this.ws = null
     this.running = false
     this.connected = false
@@ -60,7 +221,18 @@ class HubClient {
     this.pendingCalls = new Map()
     this.pingTimer = null
     this.reconnectTimer = null
+    this.reconnectAttempt = 0
     this.onBadKey = null  // 收到 bad_key 时的回调
+  }
+
+  /** 用网关推送的最新拓扑刷新本地设备列表（自动补 @handle 并排除本机）。 */
+  setDevices(list) {
+    this.devices = decorateDevices(list, this.deviceId)
+  }
+
+  /** 除本机之外的所有已连接设备（含 @handle）。 */
+  others() {
+    return this.devices
   }
 
   update(opts) {
@@ -112,6 +284,9 @@ class HubClient {
       this.ws = ws
 
       ws.onopen = () => {
+        this.reconnectAttempt = 0
+        const actions = ['ping', 'info', 'notify', 'open', 'shell', 'task']
+        if (process.platform === 'win32') actions.push('screen')
         ws.send(JSON.stringify({
           type: 'hello',
           key: this.options.token,
@@ -120,8 +295,8 @@ class HubClient {
             name: this.deviceName,
             kind: 'computer',
             os: process.platform,
-            version: '1.0.0',
-            actions: ['ping', 'info', 'notify', 'shell', 'open', 'task'],
+            version: '1.2.0',
+            actions,
           },
         }))
 
@@ -142,16 +317,15 @@ class HubClient {
           }
           if (msg.type === 'welcome') {
             this.connected = true
-            if (Array.isArray(msg.devices)) {
-              this.devices = msg.devices
-            }
+            this.reconnectAttempt = 0
+            if (Array.isArray(msg.devices)) this.setDevices(msg.devices)
           } else if (msg.type === 'error' && msg.code === 'bad_key') {
             // Token 已失效，触发自动重新认证
             this.connected = false
             this.stop()
             if (typeof this.onBadKey === 'function') this.onBadKey()
           } else if (msg.type === 'devices' && Array.isArray(msg.devices)) {
-            this.devices = msg.devices
+            this.setDevices(msg.devices)
           } else if ((msg.type === 'result' || msg.type === 'error') && msg.id) {
             const p = this.pendingCalls.get(msg.id)
             if (p) {
@@ -193,41 +367,37 @@ class HubClient {
               const text = String(body.body || body.message || '跨设备连接正常！')
               // 关键：立即回复已送达，避免因为用户在对端未点击确认导致 15s 超时！
               reply({ ok: true, delivered: true, time: Date.now() })
-
-              // 异步唤起本地通知弹窗（非阻塞）
-              import('node:child_process').then(({ exec }) => {
-                if (process.platform === 'win32') {
-                  const escapedText = text.replace(/'/g, "''").replace(/"/g, '`"')
-                  const escapedTitle = title.replace(/'/g, "''").replace(/"/g, '`"')
-                  const psCmd = `powershell -NoProfile -Command "[reflection.assembly]::loadwithpartialname('System.Windows.Forms'); [Windows.Forms.MessageBox]::Show('${escapedText}', '${escapedTitle}')"`
-                  exec(psCmd)
-                }
-              }).catch(() => {})
+              // 异步唤起本地通知弹窗（非阻塞，进程级独立窗口）
+              showLocalNotice(title, text)
+            } else if (action === 'screen') {
+              captureScreen().then(
+                (shot) => reply({ ok: true, ...shot, time: Date.now() }),
+                (error) => replyError(error?.message || '截屏失败'),
+              )
             } else if (action === 'shell') {
               const cmd = String(body.command || '').trim()
               if (!cmd) return replyError('command 不能为空')
-              import('node:child_process').then(({ exec }) => {
-                const timeoutMs = (Number(body.timeout) || 30) * 1000
-                exec(cmd, { cwd: body.cwd || process.cwd(), timeout: timeoutMs }, (err, stdout, stderr) => {
+              const timeoutMs = (Number(body.timeout) || 30) * 1000
+              exec(
+                cmd,
+                { cwd: body.cwd || process.cwd(), timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 },
+                (err, stdout, stderr) => {
+                  // 同时给出 snake_case 与 camelCase，兼容不同版本的调用方
                   reply({
+                    exit_code: err ? (err.code ?? 1) : 0,
                     exitCode: err ? (err.code ?? 1) : 0,
                     stdout: stdout ? stdout.toString() : '',
                     stderr: stderr ? stderr.toString() : '',
                     timedOut: Boolean(err && err.killed),
                   })
-                })
-              }).catch(err => replyError(err?.message || '无法执行 shell'))
+                },
+              )
             } else if (action === 'open') {
               const url = String(body.url || '')
-              if (url) {
-                import('node:child_process').then(({ exec }) => {
-                  const cmd = process.platform === 'win32' ? `start "" "${url}"` : `open "${url}"`
-                  exec(cmd)
-                  reply({ ok: true, opened: url })
-                }).catch(err => replyError(err?.message))
-              } else {
-                replyError('缺少 url 参数')
-              }
+              if (!url) return replyError('缺少 url 参数')
+              const cmd = process.platform === 'win32' ? `start "" "${url}"` : `open "${url}"`
+              exec(cmd, () => {})
+              reply({ ok: true, opened: url })
             } else if (action === 'task') {
               const taskText = String(body.text || body.prompt || body.command || '').trim()
               if (!taskText) return replyError('任务内容不能为空')
@@ -316,13 +486,7 @@ class HubClient {
                 })()
               } else {
                 // 本地无完整会话控制器时（轻量端点），弹出通知并返回明确说明
-                import('node:child_process').then(({ exec }) => {
-                  if (process.platform === 'win32') {
-                    const escaped = `来自 ${fromName} 的远程任务:\n${taskText}`.replace(/'/g, "''").replace(/"/g, '`"')
-                    const psCmd = `powershell -NoProfile -Command "[reflection.assembly]::loadwithpartialname('System.Windows.Forms'); [Windows.Forms.MessageBox]::Show('${escaped}', 'DSH 远程任务通知')"`
-                    exec(psCmd)
-                  }
-                }).catch(() => {})
+                showLocalNotice('DSH 远程任务通知', `来自 ${fromName} 的远程任务:\n${taskText}`)
 
                 reply({
                   ok: true,
@@ -339,19 +503,28 @@ class HubClient {
 
       ws.onclose = () => {
         this.connected = false
-        if (this.running) {
-          this.reconnectTimer = setTimeout(() => this.connect(), 4000)
-        }
+        if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = null }
+        this.ws = null
+        if (this.running) this.scheduleReconnect()
       }
 
       ws.onerror = () => {
         try { ws.close() } catch { }
       }
     } catch {
-      if (this.running) {
-        this.reconnectTimer = setTimeout(() => this.connect(), 5000)
-      }
+      if (this.running) this.scheduleReconnect()
     }
+  }
+
+  /** 指数退避重连（1s → 2s → 4s → … 上限 30s，带抖动），避免代理恢复瞬间的惊群。 */
+  scheduleReconnect() {
+    if (!this.running || this.reconnectTimer) return
+    const attempt = Math.min(this.reconnectAttempt++, 5)
+    const delay = Math.min(30_000, 1000 * 2 ** attempt) + Math.floor(Math.random() * 600)
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      this.connect()
+    }, delay)
   }
 
   async call(targetId, action, args = {}, timeoutMs = 30000) {
@@ -454,6 +627,118 @@ export async function apply(ctx, config = {}) {
     } catch {}
   }
 
+  /**
+   * 把一个会话消息按 @handle 转发到对应远程设备。
+   * 对端支持 task（DSH Agent）时下发给 Agent，否则退化为 notify 通知。
+   */
+  async function forwardMention({ sessionId, text, origin, targets }) {
+    const devices = Array.isArray(targets) ? targets : []
+    const body = stripMentionTokens(text, devices) || String(text ?? '')
+    const record = recordMention({
+      id: 'm_' + randomUUID().slice(0, 8),
+      time: Date.now(),
+      sessionId: sessionId ? String(sessionId) : '',
+      origin: origin || SELF_DEVICE_NAME,
+      text: body,
+      targets: devices.map((device) => ({ id: device.id, name: device.name, handle: device.handle })),
+      results: devices.map((device) => ({ handle: device.handle, name: device.name, status: 'sending' })),
+      status: 'sending',
+    })
+
+    const settle = (handle, patch) => {
+      const result = record.results.find((item) => item.handle === handle)
+      if (result) Object.assign(result, patch)
+      const states = record.results.map((item) => item.status)
+      record.status = states.every((s) => s === 'ok')
+        ? 'done'
+        : states.some((s) => s === 'sending')
+          ? 'sending'
+          : states.some((s) => s === 'ok')
+            ? 'partial'
+            : 'error'
+    }
+
+    if (!hub.connected) {
+      for (const device of devices) settle(device.handle, { status: 'error', error: '网关未连接' })
+      record.status = 'error'
+      record.error = '网关未连接'
+      return record
+    }
+
+    await Promise.all(devices.map(async (device) => {
+      const actions = Array.isArray(device.actions) ? device.actions : []
+      const action = actions.includes('task') ? 'task' : actions.includes('notify') ? 'notify' : 'task'
+      const payload = action === 'task'
+        ? { text: body, from: origin || SELF_DEVICE_NAME }
+        : { title: `来自 ${origin || SELF_DEVICE_NAME} 的消息`, body }
+      const startedAt = Date.now()
+      try {
+        const response = await hub.call(device.id, action, payload, action === 'task' ? 600_000 : 25_000)
+        const reply = typeof response?.text === 'string' ? response.text : ''
+        settle(device.handle, {
+          status: 'ok',
+          action,
+          durationMs: Date.now() - startedAt,
+          ...(reply ? { reply: reply.slice(0, 2000) } : {}),
+        })
+      } catch (error) {
+        settle(device.handle, {
+          status: 'error',
+          action,
+          durationMs: Date.now() - startedAt,
+          error: String(error?.message || error),
+        })
+      }
+    }))
+    return record
+  }
+
+  // —— @设备提及：用户消息里出现的 @handle 自动转发给对应设备 ——
+  if (typeof ctx.on === 'function') {
+    const seenUserMessages = new Set()
+    ctx.on('session/event', (session, event) => {
+      if (!event || event.type !== 'user/message') return
+      const message = event.data?.message ?? event.data
+      const id = String(message?.id ?? `${session?.id ?? ''}:${event.seq ?? ''}`)
+      if (seenUserMessages.has(id)) return
+      seenUserMessages.add(id)
+      if (seenUserMessages.size > 400) {
+        const oldest = seenUserMessages.values().next().value
+        if (oldest !== undefined) seenUserMessages.delete(oldest)
+      }
+      const text = messageText(message)
+      if (!text) return
+      // 远程委托注入的消息与本插件自身的提示不参与转发，避免跨端回环
+      if (text.startsWith('[来自远程设备') || text.startsWith('[本地提示]')) return
+      const targets = parseMentions(text, hub.others())
+      if (targets.length === 0) return
+      void forwardMention({ sessionId: session?.id, text, targets })
+    })
+  }
+
+  // 提示模型：@handle 已由网关插件自动投递，不要再重复调用 device_task
+  const systemPrompt = ctx.get?.('systemPrompt')
+  if (systemPrompt && typeof systemPrompt.section === 'function') {
+    ctx.effect(() => systemPrompt.section({
+      name: 'nanomuse-gateway-devices',
+      order: 720,
+      text: () => {
+        const devices = hub.others()
+        if (devices.length === 0) return ''
+        const list = devices.map((device) => `@${device.handle} -> ${device.name} (${device.online ? 'online' : 'offline'})`).join('; ')
+        return [
+          'nanoMuse gateway is connected; remote devices reachable from this machine:',
+          list,
+          'When a user message contains one of those @handles, the gateway plugin has already forwarded the message to that device before this step. Do not repeat that delivery with device_task.',
+          'The device tools accept those devices by name, id, or handle (without the @ prefix).',
+        ].join('\n')
+      },
+    }), 'dsh-plugin-gateway: device mention prompt')
+  }
+
+  // 插件卸载/重载时关闭长连接
+  ctx.effect(() => () => hub.stop(), 'dsh-plugin-gateway: hub lifetime')
+
   // 监听 DSH 会话事件流，实时将本地 Agent 思考输出与最终回答完整转送回调用端
   if (typeof ctx.on === 'function') {
     ctx.on('session/event', (session, event) => {
@@ -464,12 +749,15 @@ export async function apply(ctx, config = {}) {
 
       const { callId, fromId, ws } = task
 
-      hub.send({
-        type: 'event',
-        id: callId,
-        to: fromId,
-        body: { stage: 'stream_event', eventType: event.type }
-      })
+      // 只上报低频的步进信号，避免每个流式分片都产生一条中继帧
+      if (event.type === 'step/start') {
+        hub.send({
+          type: 'event',
+          id: callId,
+          to: fromId,
+          body: { stage: 'stream_event', eventType: event.type }
+        })
+      }
 
       // 1. 中间工具调用事件
       if (event.type === 'tool/call') {
@@ -602,7 +890,7 @@ export async function apply(ctx, config = {}) {
       if (!hub.connected) throw new Error('网关长连接未就绪，请在设置中配置并连接网关')
       const d = hub.find(ref ?? '')
       if (!d) {
-        const others = hub.devices.filter((x) => x.id !== hub.deviceId && x.kind !== 'web')
+        const others = hub.others()
         throw new Error(others.length ? `未找到设备 "${ref}"。在线设备: ${others.map((x) => x.name).join(', ')}` : '当前暂无其他在线设备')
       }
       if (!d.online) throw new Error(`设备 "${d.name}" 当前离线`)
@@ -616,7 +904,7 @@ export async function apply(ctx, config = {}) {
 
     tools.register({
       name: 'devices',
-      description: '获取当前在 nanoMuse 网关上连接的所有远程设备（手机、远程服务器、其他 PC 等）的列表与在线状态。',
+      description: '获取当前在 nanoMuse 网关上连接的所有远程设备（手机、远程服务器、其他 PC 等）的列表、@提及 handle 与在线状态。',
       parameters: {
         type: 'object',
         properties: {},
@@ -625,11 +913,20 @@ export async function apply(ctx, config = {}) {
       output: defaultOutput,
       isConcurrencySafe: () => true,
       execute: async () => {
-        const list = hub.devices.filter((d) => d.id !== hub.deviceId && d.kind !== 'web')
         return {
           connected: hub.connected,
-          this_device: hub.deviceId,
-          devices: list.map((d) => ({ id: d.id, name: d.name, kind: d.kind, os: d.os, online: d.online, actions: d.actions })),
+          this_device: { id: hub.deviceId, name: hub.deviceName },
+          mention_hint: '用户消息里写 @handle 即可让网关插件把内容直接投递给该设备。',
+          devices: hub.others().map((d) => ({
+            id: d.id,
+            name: d.name,
+            handle: d.handle,
+            mention: `@${d.handle}`,
+            kind: d.kind,
+            os: d.os,
+            online: d.online,
+            actions: d.actions,
+          })),
         }
       },
       presentCall: () => ({ card: 'generic', title: '查询在线设备列表', kind: 'other', rawInput: {} }),
@@ -655,7 +952,13 @@ export async function apply(ctx, config = {}) {
         const d = target(args.device)
         const timeout = Math.min(Math.max(args.timeout ?? 60, 1), 180)
         const res = await hub.call(d.id, 'shell', { command: args.command, cwd: args.cwd, timeout }, (timeout + 15) * 1000)
-        return { device: d.name, exit_code: res.exit_code ?? 0, stdout: String(res.stdout ?? ''), stderr: String(res.stderr ?? '') }
+        return {
+          device: d.name,
+          exit_code: res.exit_code ?? res.exitCode ?? 0,
+          stdout: String(res.stdout ?? ''),
+          stderr: String(res.stderr ?? ''),
+          ...(res.timedOut ? { timed_out: true } : {}),
+        }
       },
       presentCall: (args) => ({ card: 'generic', title: `在 ${args.device || '远程设备'} 执行: ${args.command}`, kind: 'other', rawInput: args }),
     })
@@ -704,22 +1007,44 @@ export async function apply(ctx, config = {}) {
     })
 
     tools.register({
-      name: 'device_task',
-      description: '委托另一台远程设备（如另外一台电脑或手机）上的 Agent 执行复杂的长期任务或新建对话。',
+      name: 'device_open',
+      description: '在指定的远程设备上用默认浏览器打开一个网页 URL，或唤起对应的应用链接。',
       parameters: {
         type: 'object',
         properties: {
-          device: { type: 'string', description: '目标设备名称、ID，或填 "phone"。留空使用唯一绑定的其他设备。' },
+          device: { type: 'string', description: '目标设备名称、ID 或 @handle（不含 @）。' },
+          url: { type: 'string', description: '要打开的 URL（http/https 或应用深链）' },
+        },
+        required: ['url'],
+        additionalProperties: false,
+      },
+      output: defaultOutput,
+      timeoutMs: 30_000,
+      execute: async (args) => {
+        const d = target(args.device)
+        const res = await hub.call(d.id, 'open', { url: args.url }, 20_000)
+        return { ok: true, device: d.name, result: res }
+      },
+      presentCall: (args) => ({ card: 'generic', title: `在 ${args.device || '远程设备'} 打开: ${args.url}`, kind: 'other', rawInput: args }),
+    })
+
+    tools.register({
+      name: 'device_task',
+      description: '委托另一台远程设备（如另外一台电脑或手机）上的 Agent 执行复杂的长期任务或新建对话。用户消息里的 @handle 已自动投递，无需再用本工具重复发送。',
+      parameters: {
+        type: 'object',
+        properties: {
+          device: { type: 'string', description: '目标设备名称、ID、@handle（不含 @），或填 "phone"。留空使用唯一绑定的其他设备。' },
           prompt: { type: 'string', description: '要委托给对端设备执行的具体任务需求或提示词' },
         },
         required: ['prompt'],
         additionalProperties: false,
       },
       output: defaultOutput,
-      timeoutMs: 60_000,
+      timeoutMs: 150_000,
       execute: async (args) => {
         const d = target(args.device)
-        const res = await hub.call(d.id, 'task', { text: args.prompt }, 45_000)
+        const res = await hub.call(d.id, 'task', { text: args.prompt }, 140_000)
         return { ok: true, device: d.name, result: res }
       },
       presentCall: (args) => ({ card: 'generic', title: `向 ${args.device || '远程设备'} 委托任务`, kind: 'other', rawInput: args }),
@@ -849,12 +1174,70 @@ export async function apply(ctx, config = {}) {
             }
 
             if (req.method === 'GET' && route === '/devices') {
-              const others = hub.devices.filter((d) => d.id !== hub.deviceId && d.kind !== 'web')
               return sendJson(200, {
                 connected: hub.connected,
                 this_device: { id: hub.deviceId, name: hub.deviceName, kind: 'computer', os: process.platform, online: hub.connected },
-                devices: others,
+                mention_prefix: '@',
+                devices: hub.others(),
               })
+            }
+
+            // —— @提及：解析 / 投递 / 记录 / 客户端诊断 ——
+            if (req.method === 'POST' && route === '/mentions/parse') {
+              const body = await readJson()
+              const text = String(body.text ?? '')
+              const targets = parseMentions(text, hub.others())
+              return sendJson(200, {
+                ok: true,
+                targets: targets.map((d) => ({
+                  id: d.id,
+                  name: d.name,
+                  handle: d.handle,
+                  online: d.online,
+                  action: Array.isArray(d.actions) && d.actions.includes('task') ? 'task' : 'notify',
+                })),
+                text: stripMentionTokens(text, targets) || text,
+              })
+            }
+
+            if (req.method === 'GET' && route === '/mentions') {
+              const limit = Number(url.searchParams.get('limit')) || 20
+              return sendJson(200, { connected: hub.connected, items: listMentions(limit) })
+            }
+
+            if (req.method === 'POST' && route === '/mentions/send') {
+              const body = await readJson()
+              const text = String(body.text ?? '').trim()
+              if (!text) return sendJson(400, { error: 'text 不能为空' })
+              const devices = hub.others()
+              const handles = Array.isArray(body.handles) ? body.handles.map((h) => String(h).toLowerCase()) : []
+              const targets = handles.length
+                ? devices.filter((d) => handles.includes(String(d.handle).toLowerCase()))
+                : parseMentions(text, devices)
+              if (targets.length === 0) return sendJson(400, { error: '没有匹配的在线设备' })
+              // 立即返回记录，投递在后台完成（task 可能耗时数分钟），状态从 /mentions 轮询
+              forwardMention({ sessionId: body.sessionId, text, targets }).catch(() => {})
+              const record = mentionRecords[0]
+              return sendJson(200, { ok: true, record })
+            }
+
+            if (req.method === 'POST' && route === '/mentions/clear') {
+              mentionRecords.length = 0
+              return sendJson(200, { ok: true })
+            }
+
+            if (req.method === 'POST' && route === '/client-log') {
+              const body = await readJson()
+              recordClientLog({
+                event: String(body.event ?? 'unknown'),
+                detail: typeof body.detail === 'string' ? body.detail.slice(0, 1200) : body.detail ?? null,
+              })
+              return sendJson(200, { ok: true })
+            }
+
+            if (req.method === 'GET' && route === '/client-log') {
+              const limit = Number(url.searchParams.get('limit')) || 40
+              return sendJson(200, { items: clientLogs.slice(0, Math.max(1, Math.min(limit, MAX_CLIENT_LOGS))) })
             }
 
             if (req.method === 'POST' && route === '/device/call') {
@@ -862,8 +1245,11 @@ export async function apply(ctx, config = {}) {
               const { to, action, args, timeoutMs } = body
               if (!to || !action) return sendJson(400, { error: 'to 和 action 必填' })
               try {
-                const result = await hub.call(to, action, args || {}, timeoutMs || 15000)
-                return sendJson(200, { ok: true, result })
+                // 允许用 name / handle / id 指定目标
+                const device = hub.find(String(to)) ?? hub.others().find((d) => d.id === to)
+                const targetId = device?.id ?? to
+                const result = await hub.call(targetId, action, args || {}, timeoutMs || 15000)
+                return sendJson(200, { ok: true, device: device?.name ?? targetId, result })
               } catch (err) {
                 return sendJson(500, { ok: false, error: err?.message || '调用失败' })
               }

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="nanoMuse Gateway and Devices">
+  <defs>
+    <linearGradient id="gw-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1E3A8A"/>
+      <stop offset="55%" stop-color="#1D4ED8"/>
+      <stop offset="100%" stop-color="#0EA5E9"/>
+    </linearGradient>
+    <linearGradient id="gw-screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#DBEAFE" stop-opacity="0.9"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="62" height="62" rx="16" fill="url(#gw-bg)"/>
+  <rect x="10.5" y="15" width="30" height="22" rx="3.2" fill="none" stroke="url(#gw-screen)" stroke-width="2.6"/>
+  <path d="M25.5 37v5M19 44.5h13" fill="none" stroke="url(#gw-screen)" stroke-width="2.6" stroke-linecap="round"/>
+  <circle cx="17.5" cy="46.5" r="3.4" fill="#22C55E"/>
+  <path d="M46.5 18.5a13 13 0 0 1 0 18" fill="none" stroke="#E0F2FE" stroke-width="2.6" stroke-linecap="round" opacity="0.95"/>
+  <path d="M51 13.5a20 20 0 0 1 0 28" fill="none" stroke="#BAE6FD" stroke-width="2.6" stroke-linecap="round" opacity="0.7"/>
+  <circle cx="41" cy="27.5" r="2.6" fill="#E0F2FE"/>
+</svg>
