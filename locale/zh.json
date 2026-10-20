@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "nanoMuse 网关与设备",
+    "description": "连接 nanoMuse 网关，在对话输入框用 @ 提及远程设备，并把消息直接投递到该设备。"
+  }
+}
