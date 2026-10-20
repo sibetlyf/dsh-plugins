@@ -87,6 +87,16 @@ class HubClient {
     this.devices = []
   }
 
+  send(frame) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(typeof frame === 'string' ? frame : JSON.stringify(frame))
+        return true
+      } catch { }
+    }
+    return false
+  }
+
   restart() {
     this.stop()
     this.running = true
@@ -115,16 +125,21 @@ class HubClient {
           },
         }))
 
+        // 15 秒心跳保活，抵抗 NAT 丢包与 Clash 代理空闲切断
         this.pingTimer = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'ping' }))
           }
-        }, 25000)
+        }, 15000)
       }
 
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(String(event.data))
+          if (msg.type === 'pong') {
+            // 心跳回执，链路正常
+            return
+          }
           if (msg.type === 'welcome') {
             this.connected = true
             if (Array.isArray(msg.devices)) {
@@ -449,14 +464,12 @@ export async function apply(ctx, config = {}) {
 
       const { callId, fromId, ws } = task
 
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'event',
-          id: callId,
-          to: fromId,
-          body: { stage: 'stream_event', eventType: event.type }
-        }))
-      }
+      hub.send({
+        type: 'event',
+        id: callId,
+        to: fromId,
+        body: { stage: 'stream_event', eventType: event.type }
+      })
 
       // 1. 中间工具调用事件
       if (event.type === 'tool/call') {
@@ -464,15 +477,13 @@ export async function apply(ctx, config = {}) {
         if (toolCallId) {
           task.tools.set(String(toolCallId), { name, args })
         }
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          const shownArgs = typeof args === 'string' ? args.slice(0, 160) : JSON.stringify(args || '').slice(0, 160)
-          ws.send(JSON.stringify({
-            type: 'event',
-            id: callId,
-            to: fromId,
-            body: { stage: 'tool', name: name || 'tool', args: shownArgs }
-          }))
-        }
+        const shownArgs = typeof args === 'string' ? args.slice(0, 160) : JSON.stringify(args || '').slice(0, 160)
+        hub.send({
+          type: 'event',
+          id: callId,
+          to: fromId,
+          body: { stage: 'tool', name: name || 'tool', args: shownArgs }
+        })
       }
       // 2. 工具返回结果事件 (tool/result)
       else if (event.type === 'tool/result') {
@@ -488,19 +499,17 @@ export async function apply(ctx, config = {}) {
             summary = message.content
           }
         }
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: 'event',
-            id: callId,
-            to: fromId,
-            body: {
-              stage: 'tool_result',
-              name: toolName,
-              summary: summary.slice(0, 160),
-              ok: message?.isError !== true
-            }
-          }))
-        }
+        hub.send({
+          type: 'event',
+          id: callId,
+          to: fromId,
+          body: {
+            stage: 'tool_result',
+            name: toolName,
+            summary: summary.slice(0, 160),
+            ok: message?.isError !== true
+          }
+        })
       }
       // 3. 中间模型输出事件 (assistant/message)
       else if (event.type === 'assistant/message') {
@@ -513,14 +522,12 @@ export async function apply(ctx, config = {}) {
         }
         if (text) {
           task.finalOutput = text
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-              type: 'event',
-              id: callId,
-              to: fromId,
-              body: { stage: 'text', text, interim: true }
-            }))
-          }
+          hub.send({
+            type: 'event',
+            id: callId,
+            to: fromId,
+            body: { stage: 'text', text, interim: true }
+          })
         }
       }
       // 4. 模型执行完毕 (turn/end)
@@ -538,21 +545,19 @@ export async function apply(ctx, config = {}) {
             finalAnswer = `[DSH 执行完成，无文本返回] (原因: ${JSON.stringify(reason || {})})`
           }
         }
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: 'result',
-            id: callId,
-            to: fromId,
-            body: {
-              ok: !reason || reason.kind !== 'error',
-              text: finalAnswer,
-              sessionId: sid,
-              reason: reason,
-              device: hub.deviceName,
-              completed: true
-            }
-          }))
-        }
+        hub.send({
+          type: 'result',
+          id: callId,
+          to: fromId,
+          body: {
+            ok: !reason || reason.kind !== 'error',
+            text: finalAnswer,
+            sessionId: sid,
+            reason: reason,
+            device: hub.deviceName,
+            completed: true
+          }
+        })
       }
     })
   }
@@ -568,24 +573,22 @@ export async function apply(ctx, config = {}) {
         return next()
       }
 
-      const { callId, fromId, ws } = task
+      const { callId, fromId } = task
       const toolName = req.toolName || 'tool'
       const reason = req.displayReason?.zh || req.displayReason?.en || req.reason || '远程任务请求调用权限'
 
       // 向发起方上报审批通知事件
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'event',
-          id: callId,
-          to: fromId,
-          body: {
-            stage: 'approval',
-            tool: toolName,
-            reason: reason,
-            autoApproved: true
-          }
-        }))
-      }
+      hub.send({
+        type: 'event',
+        id: callId,
+        to: fromId,
+        body: {
+          stage: 'approval',
+          tool: toolName,
+          reason: reason,
+          autoApproved: true
+        }
+      })
 
       // nanoMuse 远程免打扰自动放行：来自同一受信任账号远程下发的任务，直接授予单次执行权限
       return 'allowed-once'
