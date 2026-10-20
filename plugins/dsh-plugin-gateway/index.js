@@ -8,10 +8,7 @@ import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 
 export const name = 'dsh-plugin-gateway'
-export const inject = {
-  required: ['tools'],
-  optional: ['sessionController']
-}
+export const inject = ['tools']
 
 // 全局活跃的远程 DSH 任务映射: sessionId -> { callId, fromId, ws, finalOutput, timer }
 const activeTasks = new Map()
@@ -232,11 +229,14 @@ class HubClient {
               }
 
               // 尝试使用本地 DSH sessionController 创建新会话并运行 Agent
-              const sc = this.ctx?.get?.('sessionController') || this.ctx?.sessionController
+              const sc = this.sessionController
               if (sc && typeof sc.create === 'function') {
                 (async () => {
                   try {
-                    let created = await sc.create({}).catch(() => null)
+                    let created = await sc.create({ agentPreset: 'nanomuse' }).catch(() => null)
+                    if (!created) {
+                      created = await sc.create({}).catch(() => null)
+                    }
                     if (!created) {
                       created = await sc.create({ agentPreset: 'default' }).catch(() => null)
                     }
@@ -244,7 +244,7 @@ class HubClient {
                       return replyError('无法创建 DSH 会话: sessionController 返回空会话')
                     }
 
-                    const sid = created.sessionId
+                    const sid = String(created.sessionId)
                     const title = `来自 ${fromName} 的任务`
                     await sc.rename?.({ sessionId: sid, title }).catch(() => {})
 
@@ -268,16 +268,26 @@ class HubClient {
                       ws,
                       sessionId: sid,
                       finalOutput: '',
+                      tools: new Map(),
                       timer: taskTimer,
                     })
 
                     const resolved = await sc.resolveAgent?.(sid).catch(() => null)
                     if (resolved && resolved.agent) {
-                      const userMsg = {
-                        id: randomUUID(),
-                        role: 'user',
-                        content: [{ type: 'text', text: `[来自远程设备 ${fromName} 的任务委托]\n${taskText}` }],
-                        source: { kind: 'user' }
+                      let userMsg
+                      try {
+                        const { createUserMessage } = await import('@deepseek-ai/dsh-llm')
+                        userMsg = createUserMessage({
+                          content: [{ type: 'text', text: `[来自远程设备 ${fromName} 的任务委托]\n${taskText}` }],
+                          source: { kind: 'user' }
+                        })
+                      } catch {
+                        userMsg = {
+                          id: randomUUID(),
+                          role: 'user',
+                          content: [{ type: 'text', text: `[来自远程设备 ${fromName} 的任务委托]\n${taskText}` }],
+                          source: { kind: 'user' }
+                        }
                       }
                       resolved.agent.followup(userMsg)
                     } else {
@@ -420,18 +430,40 @@ export async function apply(ctx, config = {}) {
     await autoConnect()
   }
 
+  // 安全通过 ctx.inject 获得 sessionController，不直接访问 ctx.sessionController 以符合 Cordis 隔离规范
+  if (typeof ctx.inject === 'function') {
+    try {
+      ctx.inject(['sessionController'], (sctx) => {
+        hub.sessionController = sctx.sessionController
+      })
+    } catch {}
+  }
+
   // 监听 DSH 会话事件流，实时将本地 Agent 思考输出与最终回答完整转送回调用端
   if (typeof ctx.on === 'function') {
     ctx.on('session/event', (session, event) => {
       if (!session || !event) return
-      const task = activeTasks.get(session.id)
+      const sid = String(session.id)
+      const task = activeTasks.get(sid)
       if (!task) return
 
       const { callId, fromId, ws } = task
 
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'event',
+          id: callId,
+          to: fromId,
+          body: { stage: 'stream_event', eventType: event.type }
+        }))
+      }
+
       // 1. 中间工具调用事件
       if (event.type === 'tool/call') {
-        const { name, arguments: args } = event.data || {}
+        const { callId: toolCallId, name, arguments: args } = event.data || {}
+        if (toolCallId) {
+          task.tools.set(String(toolCallId), { name, args })
+        }
         if (ws && ws.readyState === WebSocket.OPEN) {
           const shownArgs = typeof args === 'string' ? args.slice(0, 160) : JSON.stringify(args || '').slice(0, 160)
           ws.send(JSON.stringify({
@@ -442,7 +474,35 @@ export async function apply(ctx, config = {}) {
           }))
         }
       }
-      // 2. 中间模型输出事件 (assistant/message)
+      // 2. 工具返回结果事件 (tool/result)
+      else if (event.type === 'tool/result') {
+        const message = event.data?.message
+        const toolCallId = String(message?.toolCallId || '')
+        const toolInfo = task.tools.get(toolCallId)
+        const toolName = toolInfo?.name || 'tool'
+        let summary = ''
+        if (message?.content) {
+          if (Array.isArray(message.content)) {
+            summary = message.content.map((b) => (b.type === 'text' ? b.text : '')).filter(Boolean).join('\n')
+          } else if (typeof message.content === 'string') {
+            summary = message.content
+          }
+        }
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'event',
+            id: callId,
+            to: fromId,
+            body: {
+              stage: 'tool_result',
+              name: toolName,
+              summary: summary.slice(0, 160),
+              ok: message?.isError !== true
+            }
+          }))
+        }
+      }
+      // 3. 中间模型输出事件 (assistant/message)
       else if (event.type === 'assistant/message') {
         const content = event.data?.message?.content
         let text = ''
@@ -463,20 +523,31 @@ export async function apply(ctx, config = {}) {
           }
         }
       }
-      // 3. 模型执行完毕 (turn/end)
+      // 4. 模型执行完毕 (turn/end)
       else if (event.type === 'turn/end') {
         clearTimeout(task.timer)
-        activeTasks.delete(session.id)
-        const finalAnswer = task.finalOutput || '(DSH Agent 已完成操作)'
+        activeTasks.delete(sid)
+        let finalAnswer = task.finalOutput
+        const reason = event.data?.reason
+        if (!finalAnswer) {
+          if (reason?.kind === 'error') {
+            finalAnswer = `[DSH 模型异常]: ${reason.error?.message || JSON.stringify(reason.error || '执行出错')}`
+          } else if (reason?.kind === 'aborted') {
+            finalAnswer = `[DSH 操作中断]: ${reason.reason || '已取消'}`
+          } else {
+            finalAnswer = `[DSH 执行完成，无文本返回] (原因: ${JSON.stringify(reason || {})})`
+          }
+        }
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({
             type: 'result',
             id: callId,
             to: fromId,
             body: {
-              ok: true,
+              ok: !reason || reason.kind !== 'error',
               text: finalAnswer,
-              sessionId: session.id,
+              sessionId: sid,
+              reason: reason,
               device: hub.deviceName,
               completed: true
             }
@@ -508,7 +579,11 @@ export async function apply(ctx, config = {}) {
     tools.register({
       name: 'devices',
       description: '获取当前在 nanoMuse 网关上连接的所有远程设备（手机、远程服务器、其他 PC 等）的列表与在线状态。',
-      parameters: {},
+      parameters: {
+        type: 'object',
+        properties: {},
+        additionalProperties: false,
+      },
       output: defaultOutput,
       isConcurrencySafe: () => true,
       execute: async () => {
@@ -526,10 +601,15 @@ export async function apply(ctx, config = {}) {
       name: 'device_shell',
       description: '在指定的远程设备（如远程服务器、另一台电脑或手机）上执行 shell 命令行指令并返回结果。',
       parameters: {
-        device: { type: 'string', description: '目标设备名称、ID，或填 "phone" 代表手机。留空使用唯一绑定的其他设备。' },
-        command: { type: 'string', required: true, description: '要执行的 shell 命令' },
-        cwd: { type: 'string', description: '远程工作目录路径' },
-        timeout: { type: 'integer', description: '超时秒数，默认 60' },
+        type: 'object',
+        properties: {
+          device: { type: 'string', description: '目标设备名称、ID，或填 "phone" 代表手机。留空使用唯一绑定的其他设备。' },
+          command: { type: 'string', description: '要执行的 shell 命令' },
+          cwd: { type: 'string', description: '远程工作目录路径' },
+          timeout: { type: 'integer', description: '超时秒数，默认 60' },
+        },
+        required: ['command'],
+        additionalProperties: false,
       },
       output: defaultOutput,
       timeoutMs: 120_000,
@@ -546,9 +626,14 @@ export async function apply(ctx, config = {}) {
       name: 'device_notify',
       description: '向指定的远程设备（如手机或电脑桌面）推送一条系统弹窗提醒通知。',
       parameters: {
-        device: { type: 'string', description: '目标设备名称或 ID，留空使用唯一绑定的其他设备。' },
-        title: { type: 'string', required: true, description: '通知标题' },
-        body: { type: 'string', required: true, description: '通知正文' },
+        type: 'object',
+        properties: {
+          device: { type: 'string', description: '目标设备名称或 ID，留空使用唯一绑定的其他设备。' },
+          title: { type: 'string', description: '通知标题' },
+          body: { type: 'string', description: '通知正文' },
+        },
+        required: ['title', 'body'],
+        additionalProperties: false,
       },
       output: defaultOutput,
       timeoutMs: 20_000,
@@ -563,7 +648,13 @@ export async function apply(ctx, config = {}) {
     tools.register({
       name: 'device_screen',
       description: '获取指定远程设备当前的屏幕截图。',
-      parameters: { device: { type: 'string', description: '目标设备名称或 ID。' } },
+      parameters: {
+        type: 'object',
+        properties: {
+          device: { type: 'string', description: '目标设备名称或 ID。' },
+        },
+        additionalProperties: false,
+      },
       output: defaultOutput,
       timeoutMs: 45_000,
       execute: async (args) => {
@@ -578,8 +669,13 @@ export async function apply(ctx, config = {}) {
       name: 'device_task',
       description: '委托另一台远程设备（如另外一台电脑或手机）上的 Agent 执行复杂的长期任务或新建对话。',
       parameters: {
-        device: { type: 'string', description: '目标设备名称、ID，或填 "phone"。留空使用唯一绑定的其他设备。' },
-        prompt: { type: 'string', required: true, description: '要委托给对端设备执行的具体任务需求或提示词' },
+        type: 'object',
+        properties: {
+          device: { type: 'string', description: '目标设备名称、ID，或填 "phone"。留空使用唯一绑定的其他设备。' },
+          prompt: { type: 'string', description: '要委托给对端设备执行的具体任务需求或提示词' },
+        },
+        required: ['prompt'],
+        additionalProperties: false,
       },
       output: defaultOutput,
       timeoutMs: 60_000,
