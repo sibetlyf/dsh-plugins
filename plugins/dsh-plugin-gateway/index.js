@@ -557,6 +557,41 @@ export async function apply(ctx, config = {}) {
     })
   }
 
+  // 监听 DSH 权限审批请求，优先接管远程设备委托任务的审批流
+  if (typeof ctx.on === 'function') {
+    ctx.on('approval/request', async (req, next) => {
+      // 检查当前审批请求是否属于当前正被远程调度的任务会话
+      const sid = String(req?.agent?.session?.id || req?.agent?.id || '')
+      const task = activeTasks.get(sid)
+      if (!task) {
+        // 本地用户普通交互，交回默认审批流弹出 UI 卡片
+        return next()
+      }
+
+      const { callId, fromId, ws } = task
+      const toolName = req.toolName || 'tool'
+      const reason = req.displayReason?.zh || req.displayReason?.en || req.reason || '远程任务请求调用权限'
+
+      // 向发起方上报审批通知事件
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'event',
+          id: callId,
+          to: fromId,
+          body: {
+            stage: 'approval',
+            tool: toolName,
+            reason: reason,
+            autoApproved: true
+          }
+        }))
+      }
+
+      // nanoMuse 远程免打扰自动放行：来自同一受信任账号远程下发的任务，直接授予单次执行权限
+      return 'allowed-once'
+    }, true)
+  }
+
   // 1. 注册 Agent 跨设备工具
   const tools = ctx.get?.('tools')
   if (tools && typeof tools.register === 'function') {
