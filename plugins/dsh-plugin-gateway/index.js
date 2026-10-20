@@ -215,40 +215,51 @@ class HubClient {
               if (!taskText) return replyError('任务内容不能为空')
               const fromName = msg.from?.name || msg.from?.id || '远程设备'
 
-              // 尝试通过 DSH sessionController 新建会话并唤醒 Agent
-              const sc = this.ctx?.get?.('sessionController') || this.ctx?.sessionController
-              if (sc && typeof sc.create === 'function') {
-                (async () => {
-                  try {
-                    const created = await sc.create({ agentPreset: 'default' })
-                    const sid = created.sessionId
-                    const title = `来自 ${fromName} 的任务`
-                    await sc.rename?.({ sessionId: sid, title }).catch(() => {})
-                    const resolved = await sc.resolveAgent?.(sid)
-                    if (resolved && resolved.agent) {
-                      resolved.agent.followup({
-                        role: 'user',
-                        content: [{ type: 'text', text: `[来自远程设备 ${fromName} 的任务]\n${taskText}` }]
-                      })
-                      reply({ ok: true, delegated: true, sessionId: sid, message: `任务已创建会话 [${title}] 并交给本地 Agent 执行` })
+              // 关键设计：立即回复发起端任务已被成功接单（避免大模型推理或异步等待导致超时！）
+              reply({
+                ok: true,
+                accepted: true,
+                task: taskText.slice(0, 60),
+                message: `[${this.deviceName}] 已成功接收来自 ${fromName} 的任务并开始执行`
+              })
+
+              // 异步唤起本地 DSH 会话与 Agent 执行（非阻塞）
+              (async () => {
+                try {
+                  const sc = this.ctx?.get?.('sessionController') || this.ctx?.sessionController
+                  if (sc && typeof sc.create === 'function') {
+                    // 兼容模式创建会话：不限定不存在的 preset
+                    let created = await sc.create({}).catch(() => null)
+                    if (!created) {
+                      created = await sc.create({ agentPreset: 'default' }).catch(() => null)
+                    }
+                    if (created && created.sessionId) {
+                      const sid = created.sessionId
+                      const title = `来自 ${fromName} 的任务`
+                      await sc.rename?.({ sessionId: sid, title }).catch(() => {})
+                      const resolved = await sc.resolveAgent?.(sid).catch(() => null)
+                      if (resolved && resolved.agent) {
+                        resolved.agent.followup({
+                          role: 'user',
+                          content: [{ type: 'text', text: `[来自远程设备 ${fromName} 的任务]\n${taskText}` }]
+                        })
+                      }
                       return
                     }
-                    reply({ ok: true, delegated: true, sessionId: sid })
-                  } catch (err) {
-                    replyError(`新建会话执行失败: ${err?.message || err}`)
                   }
-                })()
-              } else {
-                // 本地无完整会话控制器时，弹出系统通知提醒并回执
-                reply({ ok: true, delivered: true, message: `已在本地接收来自 ${fromName} 的任务` })
-                import('node:child_process').then(({ exec }) => {
-                  if (process.platform === 'win32') {
-                    const escaped = `来自 ${fromName} 的任务:\n${taskText}`.replace(/'/g, "''").replace(/"/g, '`"')
-                    const psCmd = `powershell -NoProfile -Command "[reflection.assembly]::loadwithpartialname('System.Windows.Forms'); [Windows.Forms.MessageBox]::Show('${escaped}', 'DSH 远程任务委托')"`
-                    exec(psCmd)
-                  }
-                }).catch(() => {})
-              }
+
+                  // 本地环境无会话控制器时，弹出系统通知提醒
+                  import('node:child_process').then(({ exec }) => {
+                    if (process.platform === 'win32') {
+                      const escaped = `来自 ${fromName} 的远程任务:\n${taskText}`.replace(/'/g, "''").replace(/"/g, '`"')
+                      const psCmd = `powershell -NoProfile -Command "[reflection.assembly]::loadwithpartialname('System.Windows.Forms'); [Windows.Forms.MessageBox]::Show('${escaped}', 'DSH 远程任务通知')"`
+                      exec(psCmd)
+                    }
+                  }).catch(() => {})
+                } catch (e) {
+                  // 捕获异常
+                }
+              })()
             } else {
               replyError(`不支持的操作 action: ${action}`)
             }
