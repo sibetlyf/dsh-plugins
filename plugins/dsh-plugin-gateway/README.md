@@ -12,6 +12,28 @@
 - 手机也可以把任务委托回这台电脑：插件新建标题为「来自 <设备>」的 DSH 会话，运行本机 Agent，把步骤和答案实时回传；
 - 所有双向消息落在同一个动态流里，看得见状态和结果。
 
+## 安装（GitHub ref）
+
+`Compatible with: dsh 0.2.1-alpha.1` · Node >= 22 · MIT
+
+最新版：
+
+```powershell
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-gateway"
+```
+
+固定版本：
+
+```powershell
+dsh plugin --profile web remove dsh-plugin-gateway
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.0&path:/plugins/dsh-plugin-gateway"
+```
+
+- `&path:` 选择仓库里的插件子目录；`main` 可换成 tag 或 commit。
+- 整段 spec 要用引号包住，因为 `&` 和 `#` 在 shell 里有特殊含义。
+- 安装或更新后正常停止并重新启动同一个 profile，再刷新 DSH Web 页面。
+- 卸载：`dsh plugin --profile web remove dsh-plugin-gateway`。
+
 ## 展示方式
 
 插件在 DSH Web 里占三个位置，共用同一套设置和实时状态：

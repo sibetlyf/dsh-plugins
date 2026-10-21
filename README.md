@@ -25,23 +25,38 @@ DeepSeek Harness 第三方插件集合，各插件为独立可安装的 Cordis b
 - 当前插件声明兼容 **DSH 0.2.1-alpha.1**。先执行 `dsh --version` 检查；其他版本尚未测试，遇到兼容性错误不要强行绕过。
 - 下列命令安装到 `web` profile；使用其他 profile 时，将所有 `--profile web` 和最后的 `dsh web` 改成实际名称。
 
-### 克隆并安装全部插件
+### 通过 GitHub ref 安装（推荐）
 
-以下命令适用于 PowerShell、macOS/Linux 终端。在希望保存源码的目录执行：
+每个插件是仓库里的一个子目录，用 `&path:` 指定；整段 spec 必须加引号，因为 `&`/`#` 在 shell 里有特殊含义：
+
+```sh
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-didi"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-meituan"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-tencent-meeting"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-gateway"
+```
+
+只安装其中一个时，仅执行对应行。`main` 可以换成 tag 或 commit 锁定版本，例如网关插件：
+
+```sh
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.0&path:/plugins/dsh-plugin-gateway"
+```
+
+安装器会处理 profile 依赖与 bundle 选择，无需手动编辑 profile 配置。
+
+> 这是多插件仓库，**不要**执行 `dsh plugin --profile web add github:sibetlyf/dsh-plugins#main`：仓库根目录不是一个 bundle。必须保留 `&path:/plugins/<插件目录>`；私有仓库需要配置 Git token。
+
+### 本地源码安装（可选）
+
+需要改代码时：
 
 ```sh
 git clone https://github.com/sibetlyf/dsh-plugins.git
 cd dsh-plugins
-
-dsh plugin --profile web add ./plugins/dsh-plugin-didi
-dsh plugin --profile web add ./plugins/dsh-plugin-meituan
-dsh plugin --profile web add ./plugins/dsh-plugin-tencent-meeting
 dsh plugin --profile web add ./plugins/dsh-plugin-gateway
 ```
 
-只安装其中一个时，仅执行对应的 `add` 命令。相对路径以当前终端所在目录为准，上述命令要求在克隆后的仓库根目录执行。命令由 DSH 管理 profile 依赖与 bundle 选择，无需手动编辑 profile 配置。
-
-> 这是多插件仓库，**不要**执行 `dsh plugin --profile web add https://github.com/sibetlyf/dsh-plugins.git`：仓库根目录不是一个 bundle。这些包目前未发布到 npm，也不能直接用裸包名安装。
+本地目录安装会链接源码，安装后不要移动或删除克隆目录。
 
 安装成功后，若 DSH 已在运行，请先正常停止现有进程，再重新启动同一个 profile：
 
@@ -58,6 +73,7 @@ dsh web
 | 滴滴 | 通过实例支持的安全凭据输入，或在启动终端设置 `DSH_DIDI_API_KEY`；默认保持 `environment: sandbox` | 请 Agent 调用 `didi_discover`，参数 `{"statusOnly":true}`，随后发现官方工具 |
 | 美团 | 默认使用系统 Edge；在独立浏览器中人工登录、选择配送地址。不需要 API Key | 请 Agent 调用 `meituan_discover`；实际浏览功能需要可启动的浏览器 |
 | 腾讯会议 | 通过实例支持的安全凭据输入，或在启动终端设置 `DSH_TENCENT_MEETING_TOKEN`；个人 Token 从 [腾讯会议](https://meeting.tencent.com/ai-skill) 获取 | 请 Agent 调用 `tencent_meeting_discover`，参数 `{"statusOnly":true}` |
+| 跨端中枢 | 在 **设置 → 跨端中枢** 填写网关地址、账号、密码；手机用同一账号登录 | 侧边栏出现「跨端」；输入 `@` 出现在线设备候选 |
 
 **滴滴和腾讯会议 0.1.1 新增专用凭据界面。** 新版安装激活后，在 Web 设置的插件配置区域查找「滴滴打车凭据」或「腾讯会议凭据」，可隐藏输入、保存、删除和刷新配置状态。使用 DSH 凭据接口，不把密钥提交到 AI 对话或浏览器存储。页面中的引用名称必须与 Host 插件的 `keyRef`/`tokenRef` 一致；默认无需修改。DSH 默认保存到 `$DSH_HOME/.credentials.yaml`，不是加密保险库。启动环境变量优先且只读，需移除同名环境变量并重启后才能在界面保存。
 
@@ -67,17 +83,22 @@ dsh web
 
 ### 更新与卸载
 
-在仓库根目录更新源码后，重新执行所需插件的安装命令，再正常重启对应 DSH profile：
+GitHub ref 更新（`main` 跟随最新；固定 tag 时把 `main` 换成新 tag）：
+
+```sh
+dsh plugin --profile web remove dsh-plugin-gateway
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-gateway"
+```
+
+其他插件同理，只替换插件名和 `&path:`。本地源码更新：
 
 ```sh
 git pull --ff-only
-dsh plugin --profile web add ./plugins/dsh-plugin-didi
-dsh plugin --profile web add ./plugins/dsh-plugin-meituan
-dsh plugin --profile web add ./plugins/dsh-plugin-tencent-meeting
+dsh plugin --profile web remove dsh-plugin-gateway
 dsh plugin --profile web add ./plugins/dsh-plugin-gateway
 ```
 
-卸载某个插件（按需选择）：
+更新后正常停止并重新启动对应 DSH profile。卸载某个插件（按需选择）：
 
 ```sh
 dsh plugin --profile web remove dsh-plugin-didi

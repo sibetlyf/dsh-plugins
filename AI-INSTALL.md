@@ -47,7 +47,7 @@ profile 优先采用用户指定值，其次非空 `DSH_PROFILE`；二者冲突�
 
 ## 2. 获取与检查源码
 
-在用户工作区内选择固定保存目录，本地安装可能建立链接，所以后续不可随意移动/删除源码。
+GitRef 安装不需要提前克隆；只有需要检查源码或本地安装时才执行下面的步骤。本地安装可能建立链接，后续不可随意移动/删除源码。
 
 ```sh
 git clone https://github.com/sibetlyf/dsh-plugins.git
@@ -62,8 +62,9 @@ git clone https://github.com/sibetlyf/dsh-plugins.git
 | plugins/dsh-plugin-didi | dsh-plugin-didi | keyRef=DSH_DIDI_API_KEY；environment=sandbox；timeoutMs=60000 | didi_discover、didi_call |
 | plugins/dsh-plugin-meituan | dsh-plugin-meituan | channel=msedge；headless=false；不设经纬度 | meituan_discover、meituan_call |
 | plugins/dsh-plugin-tencent-meeting | dsh-plugin-tencent-meeting | tokenRef=DSH_TENCENT_MEETING_TOKEN；timeoutMs=60000 | tencent_meeting_discover、tencent_meeting_call |
+| plugins/dsh-plugin-gateway | dsh-plugin-gateway | baseURL=http://127.0.0.1:8790；allowShell/allowOpen=false；allowTask/allowNotify/allowScreen=true | devices、device_send、delegate、device_notify、device_screen、device_shell、device_open |
 
-根目录不是 bundle，没有 npm 发布。禁止直接安装整个 Git 仓库 URL或裸包名来代替子目录。
+根目录不是 bundle，没有 npm 发布。不要直接安装整个 Git 仓库 URL 或裸包名来代替子目录；GitRef 安装必须带 `&path:/plugins/<插件目录>`。
 
 ## 3. 安装选中的 bundle
 
@@ -71,17 +72,29 @@ git clone https://github.com/sibetlyf/dsh-plugins.git
 
 若当前 Agent 有插件管理工具，先读取其说明/发现 schema，再用本地插件目录的**绝对路径**和确认过的 profile 安装。按返回结果处理已安装、待构建、兼容失败、保存成功但激活失败、重启必需等不同状态。不要猜测工具字段，不手工改写 profile bundle 列表来替代安装器。
 
-### CLI 回退
+### CLI 回退：GitRef（推荐）
 
-确认当前 DSH `--help` 支持 `plugin --profile … add`。在克隆的仓库根目录执行；`PROFILE` 表示已经确认的 profile，需换成真实名称，不能原样复制占位符：
+确认当前 DSH `--help` 支持 `plugin --profile … add`。整段 spec 加引号；`PROFILE` 换成确认过的真实 profile，`main` 可换成 tag 或 commit：
+
+```sh
+dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-didi"
+dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-meituan"
+dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-tencent-meeting"
+dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-gateway"
+```
+
+只运行选中的行。需要锁定版本时把 `main` 换成 tag，例如 `#dsh-plugin-gateway-v0.3.0&path:/plugins/dsh-plugin-gateway`。每条命令检查退出码及安装器诊断；不要先在插件目录随意 `npm install` 来代替 DSH profile 安装。
+
+### CLI 回退：本地源码
+
+在克隆的仓库根目录执行；Agent shell 每次可能重新初始化目录，需通过工具的工作目录参数指定仓库根目录，不能依赖前一次 `cd`：
 
 ```sh
 dsh plugin --profile PROFILE add ./plugins/dsh-plugin-didi
 dsh plugin --profile PROFILE add ./plugins/dsh-plugin-meituan
 dsh plugin --profile PROFILE add ./plugins/dsh-plugin-tencent-meeting
+dsh plugin --profile PROFILE add ./plugins/dsh-plugin-gateway
 ```
-
-只运行选中的行。Agent shell 每次可能重新初始化目录，需通过工具的工作目录参数指定仓库根目录，不能依赖前一次 `cd`。每条命令检查退出码及安装器诊断。不要先在插件目录随意 `npm install` 来代替 DSH profile 安装。
 
 若 CLI 缺失或写权限被拒绝，说明需要安装 DSH/由用户授权；不自动修改全局工具或提权。
 
