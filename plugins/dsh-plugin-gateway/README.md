@@ -9,7 +9,7 @@
 - 通过出站 WebSocket 连接 `nanomuse-gateway`（或任何兼容的中继），不需要开放端口；
 - 手机（`nanomuse-mobile`）用同一账号登录后自动出现在设备列表；
 - 从网页或 Agent 把 **通知**、**任务** 转发到手机/另一台电脑；
-- 手机也可以把任务委托回这台电脑：插件新建标题为「来自 <设备>」的 DSH 会话，运行本机 Agent，把步骤和答案实时回传；
+- 手机也可以把任务委托回这台电脑：插件在专门的工作区 `cross-device` 里复用同一台设备的会话「跨端 · <设备>」，运行本机 Agent，把步骤和答案实时回传；
 - 所有双向消息落在同一个动态流里，看得见状态和结果。
 
 ## 安装（GitHub ref）
@@ -26,16 +26,24 @@ dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main"
 
 ```powershell
 dsh plugin --profile web remove dsh-plugin-gateway
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.1"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.2"
 ```
 
-- `main` 根目录就是本插件的 bundle；`dsh-plugin-gateway-v0.3.1` 是固定版本 tag。
+- `main` 根目录就是本插件的 bundle；`dsh-plugin-gateway-v0.3.2` 是固定版本 tag。
 - `publish/dsh-plugin-gateway` 是同一份代码的发布镜像，旧安装方式仍可用。
 - 整段 spec 要用引号包住，因为 `#` 在 PowerShell 中会被当作注释。
 - `0.3.1` 起 peer 依赖改为 `^0.2.1-alpha.1`，兼容 `0.2.1-rc.2`；不需要再给 `0.3.0` 授权精确版本豁免。
 - 安装或更新后正常停止并重新启动同一个 profile，再刷新 DSH Web 页面。
 - 卸载：`dsh plugin --profile web remove dsh-plugin-gateway`。
 - 维护者发布：`git subtree split --prefix=plugins/dsh-plugin-gateway -b publish/dsh-plugin-gateway`，然后 `git push --force origin publish/dsh-plugin-gateway`。
+
+## 跨端会话与工作区
+
+- 其他设备发来的任务统一进入本机工作区 `$DSH_HOME/nanomuse/cross-device`，显示为 `cross-device`。
+- 同一台设备只创建一个会话，标题「跨端 · <设备>」；后续所有 @ 提及和委托复用这个会话，不再每次新建。
+- 会话映射保存在 `$DSH_HOME/nanomuse/cross-device-sessions.json`，重启 DSH 后仍然复用。
+- 本机发出的 `@设备` 会在当前 turn 的 `agent/pre-step` 阶段等待对方返回，把返回内容追加到同一 turn，再让模型回答；不会先回一句“已发送”就结束对话。
+- `device_send` / `delegate` 工具同样会等待远程结果；只有「跨端中枢」页面里的手动转发任务仍以后台作业运行，结果进入动态流。
 
 ## 展示方式
 
