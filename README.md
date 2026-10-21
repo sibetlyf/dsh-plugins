@@ -7,7 +7,7 @@ DeepSeek Harness 第三方插件集合，各插件为独立可安装的 Cordis b
 | [滴滴打车](plugins/dsh-plugin-didi/README.md) | 地点搜索、路线、价格预估、App 链接、审批后订单管理 | 22 项自动化测试；官方 Sandbox 只读联调通过 |
 | [美团外卖](plugins/dsh-plugin-meituan/README.md) | 独立浏览器搜索、菜单读取、审批后点击/加购 | 10 项自动化测试；真实登录/加购尚未验证 |
 | [腾讯会议](plugins/dsh-plugin-tencent-meeting/README.md) | 会议、录制、转写、纪要及审批后敏感操作 | 10 项客户端自动化测试 |
-| [网关与远程设备](plugins/dsh-plugin-gateway/README.md) | nanoMuse 网关长连接、对话内 @设备（高亮 + 自动投递）、跨端远程设备协同操作（截屏、Shell、通知、打开链接、委托任务） | DSH 0.2.1-rc.2 官方 Web 激活、@ 源/胶囊/Dock 注册与 Host 投递链路已验证；对端设备离线时端到端通知未完成 |
+| [跨端中枢（网关）](plugins/dsh-plugin-gateway/README.md) | nanoMuse 网关长连接、侧边栏跨端面板、消息/任务双向转发、审批回传、远程截屏/命令/打开链接 | DSH 0.2.1-alpha.1 Web 实测：手机→电脑 task、电脑→手机 notify/task、设置页与侧边栏渲染通过；`shell`/`open` 默认关闭 |
 
 ## 让 DSH AI 帮你安装
 
@@ -25,7 +25,7 @@ DeepSeek Harness 第三方插件集合，各插件为独立可安装的 Cordis b
 - 当前插件声明兼容 **DSH 0.2.1-alpha.1**。先执行 `dsh --version` 检查；其他版本尚未测试，遇到兼容性错误不要强行绕过。
 - 下列命令安装到 `web` profile；使用其他 profile 时，将所有 `--profile web` 和最后的 `dsh web` 改成实际名称。
 
-### 克隆并安装全部三个插件
+### 克隆并安装全部插件
 
 以下命令适用于 PowerShell、macOS/Linux 终端。在希望保存源码的目录执行：
 
@@ -74,6 +74,7 @@ git pull --ff-only
 dsh plugin --profile web add ./plugins/dsh-plugin-didi
 dsh plugin --profile web add ./plugins/dsh-plugin-meituan
 dsh plugin --profile web add ./plugins/dsh-plugin-tencent-meeting
+dsh plugin --profile web add ./plugins/dsh-plugin-gateway
 ```
 
 卸载某个插件（按需选择）：
@@ -82,14 +83,15 @@ dsh plugin --profile web add ./plugins/dsh-plugin-tencent-meeting
 dsh plugin --profile web remove dsh-plugin-didi
 dsh plugin --profile web remove dsh-plugin-meituan
 dsh plugin --profile web remove dsh-plugin-tencent-meeting
+dsh plugin --profile web remove dsh-plugin-gateway
 ```
 
 也可通过 DSH 插件管理器分别安装各插件目录的绝对路径。每个目录都有独立 manifest 和 bundle patch；本地目录安装可能链接到源码，安装后不要随意移动或删除克隆目录。需要可搬移包时，可在相应插件目录运行 `npm pack`，再用 `dsh plugin --profile web add <生成的.tgz绝对路径>` 安装。
 
 ## 安全
 
-不含测试 key、Token、Cookie、用户地址或登录状态。滴滴默认 Sandbox；三个插件的敏感操作受 DSH 审批，never 策略拒绝。美团不支持订单提交或支付。
+不含测试 key、Token、Cookie、用户地址或登录状态。滴滴默认 Sandbox；各插件的敏感操作受 DSH 审批，never 策略拒绝。美团不支持订单提交或支付；跨端插件的 `shell` 与 `open` 默认关闭。
 
 这些是第三方适配插件，不代表滴滴、美团或腾讯官方授权。尚未完成所有插件的 DSH GUI 安装激活验证，不将本地自动化测试等同于生产业务验证。
 
-验证日期：2026-10-14。总计 42 项自动化测试通过。
+验证日期：2026-10-21。总计 42 项自动化测试通过；跨端插件的手机↔电脑双向通知/任务另做了实测。

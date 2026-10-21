@@ -1,6 +1,6 @@
 # Agent guidance
 
-For user requests to install, configure, update, or verify these DSH plugins, read [AI-INSTALL.md](AI-INSTALL.md) first and follow its environment detection, consent, safe credential handling, installation, and verification checklist. This repository contains three independent bundles under `plugins/`, not a root bundle.
+For user requests to install, configure, update, or verify these DSH plugins, read [AI-INSTALL.md](AI-INSTALL.md) first and follow its environment detection, consent, safe credential handling, installation, and verification checklist. This repository contains four independent bundles under `plugins/`, not a root bundle.
 
 Do not assume `web` is the target profile, assume a universal credentials UI exists, or assume an Agent shell's environment is visible to the running DSH Host. Do not claim compatibility with every DSH version. Current declared compatibility is DSH 0.2.1-alpha.1 and Node >=22.
 

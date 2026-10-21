@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-gateway",
-  "version": "0.2.0",
-  "description": "nanoMuse Gateway connection, @device mentions in the DSH composer, and remote device control for DeepSeek Harness Web",
+  "version": "0.3.0",
+  "description": "Cross-device hub for DeepSeek Harness: one nanoMuse account, messages and tasks forwarded between this computer, phones and other computers",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -10,6 +10,7 @@
   "exports": {
     ".": "./index.js",
     "./client": "./settings.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
@@ -17,12 +18,14 @@
     "index.js",
     "settings.js",
     "cordis.patch.yml",
-    "README.md",
     "locale/*.json",
-    "icon.svg"
+    "icon.svg",
+    "docs/*.png",
+    "README.md",
+    "LICENSE"
   ],
   "peerDependencies": {
-    "@deepseek-ai/dsh": "^0.2.1-alpha.1"
+    "@deepseek-ai/dsh": "0.2.1-alpha.1"
   },
   "dsh": {
     "bundle": {
@@ -30,13 +33,10 @@
     },
     "client": {
       "platform": "web",
-      "immediately": true,
       "inject": [
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-settings",
-        "@deepseek-ai/dsh-client-ui-plugin-manager",
-        "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-ui-input-trigger"
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
       ]
     }
   },
@@ -45,6 +45,6 @@
     "cordis",
     "gateway",
     "remote-devices",
-    "mentions"
+    "nanomuse"
   ]
 }
