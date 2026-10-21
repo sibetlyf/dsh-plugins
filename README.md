@@ -1,91 +1,132 @@
 # dsh-plugin-gateway
 
-> nanoMuse Gateway & Remote Device Control Plugin for DeepSeek Harness (DSH) Web.
+> 跨端中枢：用同一个 nanoMuse 账号，把 DeepSeek Harness 电脑、手机和其他电脑连成一个设备网。
 
-本插件为 DeepSeek Harness (DSH) Web 官方运行环境提供 **中转网关长连接**、**对话内 @设备** 与 **跨端远程设备协同调度** 能力。
+本插件让 DSH Web 成为一个 **nanoMuse Hub 设备**：
 
----
+![跨端中枢](docs/cross-device.png)
 
-## 核心功能
+- 通过出站 WebSocket 连接 `nanomuse-gateway`（或任何兼容的中继），不需要开放端口；
+- 手机（`nanomuse-mobile`）用同一账号登录后自动出现在设备列表；
+- 从网页或 Agent 把 **通知**、**任务** 转发到手机/另一台电脑；
+- 手机也可以把任务委托回这台电脑：插件新建标题为「来自 <设备>」的 DSH 会话，运行本机 Agent，把步骤和答案实时回传；
+- 所有双向消息落在同一个动态流里，看得见状态和结果。
 
-1. **网关长连接与自适应连通**
-   - 支持连接自建或云端 Python nanoMuse Gateway。
-   - 优先探测标准 `/healthz` 健康端点，自适应兼容免密直连模式与带密鉴权模式。
-   - 自动向网关建立 WebSocket (`/v1/hub`) 全双工中继长连接，15s 心跳保活；断线后按 1s→2s→4s…（上限 30s）指数退避重连。
+## 展示方式
 
-2. **对话内 @设备（本版新增）**
-   - 在 DSH 对话输入框键入 `@`，直接弹出在线设备候选菜单（按在线状态分组，显示 `@handle` 与在线/离线）。
-   - 选中后以 `@handle` 写回草稿；输入框内该令牌会高亮，发送后消息中显示为**设备高亮胶囊**（品牌色描边 + 在线状态点）。
-   - 发送消息时，Host 半自动解析其中的 `@handle`，把对话内容投递给对应设备：对端支持 `task` 时下发给它的 DSH Agent，否则退化为 `notify` 通知；投递前会剥离该目标的 `@handle` 令牌，避免跨端回环。
-   - 输入框下方 Dock 实时显示投递状态（投递中 / 已送达 / 部分送达 / 失败）。
-   - 设备名含空格等字符时，自动归一化为稳定 `handle`（空格→`-`），规则：只保留字母、数字、`_`、`-`。
+插件在 DSH Web 里占三个位置，共用同一套设置和实时状态：
 
-3. **跨设备远程操作工具 (Agent Tools)**
-   - `devices`：查看网关拓扑中所有设备、其 `@handle` 与在线状态。
-   - `device_shell`：在指定远程设备上执行命令行指令并回传结果。
-   - `device_screen`：获取指定远程设备的实时屏幕截图（本机为 Windows 时同时对外提供 `screen` 能力）。
-   - `device_notify`：向指定远程设备推送系统弹窗提醒。
-   - `device_open`：在远程设备上打开网页 URL 或应用深链。
-   - `device_task`：把复杂任务委托给对端设备上的 Agent。
-   - 模型侧会收到一段提示：用户消息里的 `@handle` 已由插件自动投递，无需再重复 `device_task`。
+| 位置 | 用途 |
+| --- | --- |
+| 左侧栏「跨端」图标 + 主面板 | 日常使用：网关状态、设备卡片、转发消息/任务、最近动态 |
+| 设置 → 跨端中枢 | 连接表单、设备名、权限开关、本机信息 |
+| 插件页 → 本插件行「配置」 | 与设置页相同的配置入口，不用离开插件列表 |
 
-4. **原生内嵌设置面板 (DSH Web UI)**
-   - 无外部独立前端或端口依赖，完全融入 DSH Web 原生界面。
-   - 同时挂载于 **插件列表 (Plugins)** 与 **系统设置 (Settings)**：探测网关、管理账号密码、查看设备拓扑与一键 `@handle` 复制、发起 `ping`/通知/截屏/委托测试、查看 @ 提及投递记录并做投递自检。
+主面板的「转发消息」支持两种模式：
 
----
+- **通知**：在对方设备弹出提醒，适合「告诉手机…」「提醒电脑…」；
+- **任务**：交给对方自己的 Agent 执行，实时显示工具步骤和最终回答。
 
-## HTTP 端点（插件自带，便于脚本与自检）
+## 配置方式
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/nanomuse/gateway/config` | 当前配置（含 token，仅本机 Web 可用） |
-| POST | `/nanomuse/gateway/test` | 探测网关健康端点 |
-| POST | `/nanomuse/gateway/connect` | 认证 + 保存配置 + 建立长连接（`__logout: true` 为注销） |
-| GET | `/nanomuse/gateway/devices` | 设备拓扑（含 `handle`） |
-| POST | `/nanomuse/gateway/device/call` | 调用设备动作（`to` 支持 name/id/handle） |
-| POST | `/nanomuse/gateway/mentions/parse` | 只解析文本中的 `@handle`（不投递，dry-run） |
-| GET | `/nanomuse/gateway/mentions` | 最近的 @ 提及投递记录 |
-| POST | `/nanomuse/gateway/mentions/send` | 手动投递（`{ text }` 或 `{ text, handles }`） |
-| POST | `/nanomuse/gateway/mentions/clear` | 清空投递记录 |
-| POST/GET | `/nanomuse/gateway/client-log` | 浏览器侧注册结果与异常回传（无控制台时的自检通道） |
+![跨端中枢设置](docs/settings.png)
 
----
+配置分两层，互不覆盖：
 
-## 安装与使用
+1. **插件行配置**（`cordis.patch.yml` / profile patch）：部署默认值，适合无界面或打包部署；
+2. **本机配置** `$DSH_HOME/nanomuse/gateway.json`：API Key、设备 ID、网页里保存的网关地址/账号/设备名/权限。网页保存优先于行默认值，**修改配置不需要重写 profile 或重启**。
 
-在 `dsh-plugins` 仓库根目录执行安装：
-
-```bash
-dsh plugin --profile web add ./plugins/dsh-plugin-gateway
+```yaml
+- insert:
+    - id: gateway
+      name: dsh-plugin-gateway
+      config:
+        baseURL: http://127.0.0.1:8790
+        identifier: admin
+        deviceName: ''
+        allowTask: true
+        allowNotify: true
+        allowScreen: true
+        allowOpen: false     # 默认关闭
+        allowShell: false    # 默认关闭，高危
 ```
 
-启动 DSH Web 客户端：
+环境变量 `NANOMUSE_CLOUD_URL` 或 `NANOMUSE_GATEWAY_URL` 可作为地址兜底（优先于行配置，低于网页保存）。
 
-```bash
-dsh --profile web
+## 连接
+
+1. 启动网关（`nanomuse-gateway`）：
+
+   ```bash
+   ./start.sh start          # 默认 127.0.0.1:8790
+   ```
+
+2. 在 DSH Web 侧边栏打开「跨端」，输入网关地址、账号、密码，点「保存并连接」。
+   - 新账号会自动在网关登记；
+   - 可勾选同时修改网关侧密码；
+   - 手机 `nanomuse-mobile` 用同一账号登录后会自动出现。
+
+3. 在「设置 → 跨端中枢」里按需打开权限：
+   - 接受任务 / 接收提醒 / 允许截屏：常用；
+   - 允许打开链接：一般关闭；
+   - 允许执行命令：高危，默认关闭。
+
+## Agent 工具
+
+连接后，Agent 会得到当前账号的设备列表，并可使用：
+
+| 工具 | 作用 |
+| --- | --- |
+| `devices` | 列出账号下的设备、在线状态和能力 |
+| `device_send` | 把消息转发到设备：`mode="notify"` 或 `mode="task"` |
+| `delegate` | 委托一段自然语言任务并等待回答 |
+| `device_notify` / `device_screen` / `device_shell` / `device_open` | 通知、截屏、远程命令、打开链接 |
+
+示例：
+
+```text
+帮我把“会议 10 分钟后开始”发到手机上
+让 Ubuntu 编译一下项目并把日志发我
+手机现在屏幕上是什么？
 ```
 
-打开浏览器进入 DSH Web，在 **设置** 或 **插件** 中找到 **nanoMuse 网关与设备**：
-- 输入网关地址（例如 `http://<服务器IP>:8790`）；
-- 点击 **测试连接** 与 **保存并连接网关** 即可一键就绪；
-- 回到对话输入框，键入 `@` 选择设备，直接发送内容即可跨端投递。
+## 本机被远程调用
 
-> 对端设备若仍是旧版插件（只声明 `ping/info/notify`），@ 投递会自动降级为通知；升级两端插件后即可走对端 Agent。
+插件按账号隔离，只响应同一账号的设备；每个动作都有独立开关：
 
----
+| 动作 | 说明 |
+| --- | --- |
+| `info` | 返回本机信息和可用动作（始终允许） |
+| `notify` | 显示 Web 提示并尽量弹系统通知 |
+| `task` | 新建 DSH 会话运行 Agent，流式回传工具/文本/审批事件 |
+| `screen` | 截屏（Windows/macOS） |
+| `open` | 打开 http(s) 链接（默认关闭） |
+| `shell` | 执行命令（默认关闭） |
+| `approve` / `stop` | 远程任务的审批与停止 |
 
-## 自检
+远程任务的审批卡片默认发回发起设备，由发起者在手机上确认；可在设置中关闭。
+
+## 协议
+
+与 `nanoMuse` Hub 协议一致（`docs/zh/hub.md`）：
+
+- `GET /v1/gateway/status` 健康探测；
+- `POST /v1/auth/credentials` 鉴权（兼容 `/v1/auth/login`）；
+- `WS /v1/hub` 全双工中继：`hello` / `welcome` / `devices` / `call` / `event` / `result` / `ping` / `rename`。
+
+## 开发
 
 ```bash
-# 设备与 @handle
-curl -s http://127.0.0.1:3080/nanomuse/gateway/devices
-
-# 只解析、不投递
-curl -s -X POST http://127.0.0.1:3080/nanomuse/gateway/mentions/parse \
-  -H 'content-type: application/json' \
-  -d '{"text":"@<handle> 帮我看下这个报错"}'
-
-# 浏览器侧注册结果（刷新页面后查看）
-curl -s http://127.0.0.1:3080/nanomuse/gateway/client-log
+node build.mjs        # 生成 index.js / settings.js
+dsh --profile web     # 启动 DSH Web
 ```
+
+插件自有的 HTTP API 位于 `/nanomuse/gateway/*`：
+
+- `GET /config`、`POST /config`
+- `POST /test`、`POST /connect`、`POST /disconnect`、`POST /reconnect`
+- `GET /snapshot`、`GET /devices`
+- `POST /forward`、`POST /device/call`、`POST /device/rename`
+- `POST /activity/clear`
+
+`GET /ui` 会重定向回 DSH 首页：界面已经完全并入 DSH Web，不再维护第二套页面。

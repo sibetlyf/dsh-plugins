@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "nanoMuse Gateway & Devices",
-    "description": "Connect a nanoMuse gateway, @-mention remote devices from the composer, and control them from DSH."
+    "title": "Cross-device hub",
+    "description": "Forward messages and tasks between this computer, phones and other computers on one nanoMuse account. Connect the gateway, see every device, send a notice or a task, and read what came back."
   }
 }

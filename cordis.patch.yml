@@ -1,5 +1,24 @@
+# The dsh-plugin-gateway bundle layer.
+#
+# This row is the deployment default. Anything the person saves in the Web UI
+# (gateway address, account, device name, permissions, API key) is kept in
+# $DSH_HOME/nanomuse/gateway.json and wins over the values below, so changing
+# them from the page never rewrites the profile.
+#
+# The dangerous actions are off by default: allowShell runs commands on this
+# computer as the logged-in user, and allowOpen opens links on the desktop.
 - insert:
     - id: gateway
       name: dsh-plugin-gateway
       config:
         baseURL: http://127.0.0.1:8790
+        identifier: admin
+        deviceName: ''
+        autoConnect: true
+        autoSyncToNanomuse: true
+        allowTask: true
+        allowNotify: true
+        allowScreen: true
+        allowOpen: false
+        allowShell: false
+        relayApprovals: true
