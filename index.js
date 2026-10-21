@@ -714,6 +714,8 @@ var HubClient = class {
     const query = raw.toLowerCase();
     const byId = others.find((device) => device.id.toLowerCase() === query);
     if (byId) return byId;
+    const byHandle = others.find((device) => String(device.handle ?? "").toLowerCase() === query);
+    if (byHandle) return byHandle;
     const byName = others.find((device) => device.name.toLowerCase() === query);
     if (byName) return byName;
     const byPrefix = others.find((device) => device.name.toLowerCase().startsWith(query));
@@ -862,7 +864,7 @@ var HubClient = class {
       this.connected = true;
       this.connectedAt = Date.now();
       this.lastError = "";
-      const list = readDevices(frame2.devices);
+      const list = readDevices(frame2.devices, this.deviceId);
       const changed = !sameDevices(this.devices, list);
       this.devices = list;
       this.setState("connected", String(frame2.device_id ?? ""));
@@ -873,7 +875,7 @@ var HubClient = class {
       return;
     }
     if (type === "devices") {
-      const list = readDevices(frame2.devices);
+      const list = readDevices(frame2.devices, this.deviceId);
       const changed = !sameDevices(this.devices, list);
       if (!changed) return;
       this.devices = list;
@@ -958,7 +960,7 @@ var HubClient = class {
     }
   }
 };
-function readDevices(input) {
+function readDevices(input, selfId) {
   if (!Array.isArray(input)) return [];
   const list = [];
   for (const raw of input) {
@@ -978,7 +980,24 @@ function readDevices(input) {
       actions: Array.isArray(value.actions) ? value.actions.map((action) => String(action)) : []
     });
   }
-  return list;
+  return decorateHandles(list, selfId);
+}
+function sanitizeHandle(name2, id) {
+  const raw = String(name2 ?? "").trim();
+  const handle = raw.replace(/\s+/gu, "-").replace(/[^\p{L}\p{N}_-]/gu, "").slice(0, 32);
+  return handle || String(id ?? "").slice(0, 8) || "device";
+}
+function decorateHandles(list, selfId) {
+  const used = /* @__PURE__ */ new Map();
+  return list.map((device) => {
+    if (device.id === selfId || device.kind === "web") return device;
+    let handle = sanitizeHandle(device.name, device.id);
+    const key = handle.toLowerCase();
+    const count = used.get(key) ?? 0;
+    used.set(key, count + 1);
+    if (count > 0) handle = `${handle}-${count + 1}`;
+    return { ...device, handle };
+  });
 }
 function sameActions(a, b) {
   return a.length === b.length && a.every((value, index) => value === b[index]);
@@ -1343,7 +1362,7 @@ ${lines}`);
           {
             type: "text",
             text: list.map(
-              (device) => `- @${device.name} (${device.kind}, ${device.os || "\u672A\u77E5\u7CFB\u7EDF"}, ${device.online ? "\u{1F7E2} \u5728\u7EBF" : "\u26AA \u79BB\u7EBF"})` + (device.actions?.length ? ` \xB7 \u652F\u6301: ${device.actions.join(", ")}` : "")
+              (device) => `- @${device.handle ?? device.name}\uFF08${device.name}\uFF0C${device.kind}\uFF0C${device.os || "\u672A\u77E5\u7CFB\u7EDF"}\uFF0C${device.online ? "\u{1F7E2} \u5728\u7EBF" : "\u26AA \u79BB\u7EBF"}\uFF09` + (device.actions?.length ? ` \xB7 \u652F\u6301: ${device.actions.join(", ")}` : "")
             ).join("\n")
           }
         ];
@@ -1358,6 +1377,8 @@ ${lines}`);
         devices: list.map((device) => ({
           id: device.id,
           name: device.name,
+          handle: device.handle,
+          mention: device.handle ? `@${device.handle}` : "",
           kind: device.kind,
           os: device.os,
           online: device.online,
@@ -1373,7 +1394,7 @@ ${lines}`);
     parameters: {
       type: "object",
       properties: {
-        device: { type: "string", description: "\u76EE\u6807\u8BBE\u5907\u540D\u79F0\u3001ID\uFF0C\u6216 @\u8BBE\u5907\u540D\uFF0C\u4F8B\u5982 @\u624B\u673A\u3001@Office-PC\u3002" },
+        device: { type: "string", description: "\u76EE\u6807\u8BBE\u5907\u540D\u79F0\u3001ID\u3001@handle\uFF0C\u6216\u5E26 @ \u7684\u8BBE\u5907\u6807\u8BC6\uFF0C\u4F8B\u5982 @\u624B\u673A\u3001@Office-PC\u3002" },
         text: { type: "string", description: "\u8981\u8F6C\u53D1\u7684\u5185\u5BB9\uFF1A\u63D0\u9192\u6B63\u6587\uFF0C\u6216\u59D4\u6258\u7ED9\u76EE\u6807 Agent \u7684\u4EFB\u52A1\u63CF\u8FF0\u3002" },
         mode: { type: "string", enum: ["notify", "task"], description: "notify \u63A8\u9001\u63D0\u9192\uFF08\u9ED8\u8BA4\uFF09\uFF1Btask \u59D4\u6258\u4EFB\u52A1\u5E76\u7B49\u5F85\u56DE\u7B54\u3002" },
         title: { type: "string", description: "notify \u6A21\u5F0F\u4E0B\u7684\u901A\u77E5\u6807\u9898\uFF0C\u9ED8\u8BA4\u201C\u6765\u81EA DSH\u201D\u3002" }
@@ -1704,6 +1725,8 @@ var GatewayPluginService = class extends Service {
   runner;
   actions;
   jobs = /* @__PURE__ */ new Map();
+  mentionRecords = [];
+  seenUserMessages = /* @__PURE__ */ new Set();
   gatewayInfo = null;
   gatewayInfoAt = 0;
   lastHubState = "idle";
@@ -1761,6 +1784,7 @@ var GatewayPluginService = class extends Service {
     });
     this.hub.setActions(actions);
     const detachRunner = this.runner.attach();
+    const detachMentions = this.attachMentionListener();
     registerDeviceTools(this.ctx, {
       hub: this.hub,
       deviceName: () => this.effective.deviceName,
@@ -1771,6 +1795,7 @@ var GatewayPluginService = class extends Service {
     this.ctx.effect(
       () => () => {
         detachRunner();
+        detachMentions();
         this.hub.close();
         this.runner.dispose();
       },
@@ -1803,7 +1828,7 @@ var GatewayPluginService = class extends Service {
     }
     const others = this.hub.getOtherDevices();
     const lines = others.map(
-      (device) => `- @${device.name} (ID: ${device.id}\uFF0C${device.kind}\uFF0C${device.os || "\u672A\u77E5\u7CFB\u7EDF"}\uFF0C${device.online ? "\u5728\u7EBF" : "\u79BB\u7EBF"}\uFF0C\u52A8\u4F5C: ${device.actions.join(", ") || "\u65E0"})`
+      (device) => `- @${device.handle ?? device.name}\uFF08${device.name}\uFF0CID: ${device.id}\uFF0C${device.kind}\uFF0C${device.os || "\u672A\u77E5\u7CFB\u7EDF"}\uFF0C${device.online ? "\u5728\u7EBF" : "\u79BB\u7EBF"}\uFF0C\u52A8\u4F5C: ${device.actions.join(", ") || "\u65E0"}\uFF09`
     );
     return [
       "### nanoMuse \u8DE8\u7AEF\u4E2D\u67A2",
@@ -1812,12 +1837,139 @@ var GatewayPluginService = class extends Service {
       ...lines,
       "",
       "\u8DE8\u7AEF\u534F\u4F5C\u89C4\u5219\uFF1A",
-      '1. \u7528\u6237\u8BF4\u201C\u544A\u8BC9\u624B\u673A\u2026\u201D\u201C\u63D0\u9192\u7535\u8111\u2026\u201D\u6216\u8981\u628A\u4E00\u6BB5\u8BDD\u8F6C\u53D1\u5230\u522B\u7684\u8BBE\u5907\u65F6\uFF0C\u7528 `device_send`\uFF0Cmode="notify"\u3002',
-      '2. \u7528\u6237\u8BF4\u201C\u8BA9\u624B\u673A/\u53E6\u4E00\u53F0\u7535\u8111\u505A\u2026\u201D\u65F6\uFF0C\u7528 `device_send`\uFF0Cmode="task" \u6216 `delegate`\uFF1B\u76EE\u6807\u8BBE\u5907\u4E0A\u7684 Agent \u4F1A\u5728\u5B83\u81EA\u5DF1\u7684\u4F1A\u8BDD\u91CC\u5B8C\u6210\u5E76\u56DE\u4F20\u7B54\u6848\u3002',
+      "1. \u7528\u6237\u6D88\u606F\u91CC\u5199\u4E86 `@\u8BBE\u5907\u540D`\uFF08\u4F8B\u5982 @\u624B\u673A\u3001@Office-PC\uFF09\u65F6\uFF0C\u63D2\u4EF6\u5728\u6A21\u578B\u770B\u5230\u6D88\u606F\u4E4B\u524D\u5C31\u5DF2\u7ECF\u628A\u5185\u5BB9\u6295\u9012\u5230\u90A3\u53F0\u8BBE\u5907\uFF1B\u4E0D\u8981\u518D\u7528 device_send/delegate \u91CD\u590D\u6295\u9012\u3002",
+      '2. \u7528\u6237\u6CA1\u6709\u4F7F\u7528 @\u3001\u800C\u662F\u660E\u786E\u8BF4\u201C\u544A\u8BC9\u624B\u673A\u2026\u201D\u201C\u63D0\u9192\u7535\u8111\u2026\u201D\u65F6\uFF0C\u7528 `device_send`\uFF0Cmode="notify"\uFF1B\u8BF4\u201C\u8BA9\u624B\u673A/\u53E6\u4E00\u53F0\u7535\u8111\u505A\u2026\u201D\u65F6\u7528 mode="task" \u6216 `delegate`\u3002',
       "3. \u9700\u8981\u8FDC\u7A0B\u547D\u4EE4\u3001\u622A\u56FE\u6216\u6253\u5F00\u94FE\u63A5\u65F6\uFF0C\u5206\u522B\u7528 `device_shell`\u3001`device_screen`\u3001`device_open`\uFF0C\u76EE\u6807\u8BBE\u5907\u53EF\u80FD\u56E0\u6743\u9650\u62D2\u7EDD\u3002",
-      "4. \u5148\u7528 `devices` \u786E\u8BA4\u8BBE\u5907\u540D\uFF1B\u8BBE\u5907\u540D\u53EF\u7528 @ \u524D\u7F00\u3002\u5BF9\u65B9\u8BBE\u5907\u79BB\u7EBF\u65F6\u4E0D\u8981\u5047\u88C5\u5DF2\u53D1\u9001\u3002",
+      "4. \u5148\u7528 `devices` \u786E\u8BA4\u8BBE\u5907\u540D\u6216 `@handle`\uFF1B\u5BF9\u65B9\u8BBE\u5907\u79BB\u7EBF\u65F6\u4E0D\u8981\u5047\u88C5\u5DF2\u53D1\u9001\u3002",
       "5. \u5176\u4ED6\u8BBE\u5907\u53D1\u6765\u7684 task \u4F1A\u5728\u672C\u673A\u65B0\u5EFA\u6807\u9898\u4E3A\u300C\u6765\u81EA <\u8BBE\u5907>\u300D\u7684\u4F1A\u8BDD\uFF0C\u7B54\u6848\u4F1A\u56DE\u4F20\u7ED9\u5BF9\u65B9\u3002"
     ].join("\n");
+  }
+  // ── @device mentions ─────────────────────────────────────────────────
+  attachMentionListener() {
+    const on = this.ctx;
+    return on.on("session/event", (session, event) => {
+      if (!event || event.type !== "user/message") return;
+      const message = event.data?.message ?? event.data;
+      const id = String(message?.id ?? `${session?.id ?? ""}:${event.seq ?? ""}`);
+      if (!id || this.seenUserMessages.has(id)) return;
+      this.seenUserMessages.add(id);
+      if (this.seenUserMessages.size > 500) {
+        const first = this.seenUserMessages.values().next().value;
+        if (first) this.seenUserMessages.delete(first);
+      }
+      const text = contentText(message?.content);
+      if (!text) return;
+      if (text.startsWith("[\u8FD9\u662F\u6765\u81EA") || text.startsWith("[\u6765\u81EA\u8FDC\u7A0B\u8BBE\u5907") || text.startsWith("[\u672C\u5730\u63D0\u793A]") || text.startsWith("Current runtime context") || text.startsWith("### nanoMuse \u8DE8\u7AEF\u4E2D\u67A2")) {
+        return;
+      }
+      const targets = this.parseMentions(text);
+      if (targets.length === 0) return;
+      void this.forwardMention({ sessionId: String(session?.id ?? ""), text, targets });
+    });
+  }
+  /** The devices a message mentions, matched case-insensitively by their composer handle. */
+  parseMentions(text) {
+    const devices = this.hub.getOtherDevices();
+    const map = new Map(devices.map((device) => [String(device.handle ?? "").toLowerCase(), device]));
+    const found = /* @__PURE__ */ new Map();
+    const pattern = /@([\p{L}\p{N}_-]+)/gu;
+    for (const match of String(text ?? "").matchAll(pattern)) {
+      const key = String(match[1] ?? "").toLowerCase();
+      if (!key || found.has(key)) continue;
+      const device = map.get(key);
+      if (!device) continue;
+      found.set(key, {
+        id: device.id,
+        name: device.name,
+        handle: device.handle ?? device.name,
+        online: device.online,
+        action: device.actions.includes("task") ? "task" : "notify"
+      });
+    }
+    return [...found.values()];
+  }
+  stripMentionTokens(text, targets) {
+    const handles = new Set(targets.map((target) => target.handle.toLowerCase()));
+    if (handles.size === 0) return text;
+    return String(text ?? "").replace(/@([\p{L}\p{N}_-]+)/gu, (full, token) => handles.has(token.toLowerCase()) ? " " : full).replace(/[ \t]{2,}/gu, " ").trim();
+  }
+  async forwardMention(input) {
+    const body = this.stripMentionTokens(input.text, input.targets) || input.text;
+    const record = {
+      id: `m_${randomUUID4().slice(0, 8)}`,
+      time: Date.now(),
+      sessionId: input.sessionId,
+      origin: this.effective.deviceName,
+      text: body,
+      targets: input.targets,
+      results: input.targets.map((target) => ({
+        handle: target.handle,
+        name: target.name,
+        status: "sending",
+        action: target.action
+      })),
+      status: "sending"
+    };
+    this.mentionRecords.unshift(record);
+    if (this.mentionRecords.length > 60) this.mentionRecords.length = 60;
+    const activity = this.feed.add({
+      direction: "out",
+      action: "mention",
+      status: "running",
+      deviceId: input.targets[0]?.id,
+      deviceName: input.targets.map((target) => `@${target.handle}`).join(" "),
+      title: `@\u63D0\u53CA\u6295\u9012 \xB7 ${input.targets.map((target) => `@${target.handle}`).join(" ")}`,
+      detail: body.slice(0, 300)
+    });
+    if (!this.hub.connected) {
+      record.status = "error";
+      record.error = "\u7F51\u5173\u672A\u8FDE\u63A5";
+      for (const result of record.results) Object.assign(result, { status: "error", error: record.error });
+      this.feed.update(activity.id, { status: "error", detail: `${body}
+${record.error}`.slice(-700) });
+      return record;
+    }
+    const settle = (handle, patch) => {
+      const result = record.results.find((item) => item.handle === handle);
+      if (result) Object.assign(result, patch);
+      const states = record.results.map((item) => item.status);
+      if (states.every((status) => status === "ok")) record.status = "done";
+      else if (states.every((status) => status === "error")) record.status = "error";
+      else if (states.some((status) => status === "ok") && states.some((status) => status === "error")) record.status = "partial";
+    };
+    await Promise.all(
+      input.targets.map(async (target) => {
+        const started = Date.now();
+        try {
+          const result = target.action === "task" ? await this.hub.call(
+            target.id,
+            "task",
+            { text: body, from: this.effective.deviceName, language: "zh-CN" },
+            3e5
+          ) : await this.hub.call(target.id, "notify", { title: "\u6765\u81EA DSH", body }, 2e4);
+          const reply = target.action === "task" ? String(result.text ?? result.answer ?? "").trim() : String(result.text ?? result.message ?? "").trim();
+          settle(target.handle, { status: "ok", reply, durationMs: Date.now() - started });
+        } catch (error) {
+          settle(target.handle, {
+            status: "error",
+            error: error instanceof Error ? error.message : String(error),
+            durationMs: Date.now() - started
+          });
+        }
+      })
+    );
+    const summary = record.results.map((result) => `@${result.handle}: ${result.status === "ok" ? result.reply || "\u5DF2\u9001\u8FBE" : result.error || "\u5931\u8D25"}`).join("\n");
+    this.feed.update(activity.id, {
+      status: record.status === "done" ? "ok" : record.status === "partial" ? "error" : "error",
+      detail: `${body}
+${summary}`.slice(-700)
+    });
+    this.log("info", `@\u63D0\u53CA\u6295\u9012\u5B8C\u6210\uFF1A${summary.replace(/\n/g, " | ").slice(0, 160)}`);
+    return record;
+  }
+  mentionPayload(limit = 20) {
+    const size = Math.max(1, Math.min(Number(limit) || 20, this.mentionRecords.length || 1));
+    return { connected: this.hub.connected, items: this.mentionRecords.slice(0, size) };
   }
   // ── incoming ────────────────────────────────────────────────────────
   onHubState(state, detail) {
@@ -2016,6 +2168,48 @@ var GatewayPluginService = class extends Service {
       }
       if (req.method === "GET" && route === "/devices") {
         return this.sendJson(res, 200, this.devicesPayload());
+      }
+      if (req.method === "GET" && route === "/mentions") {
+        return this.sendJson(res, 200, this.mentionPayload(Number(url.searchParams.get("limit") ?? 20)));
+      }
+      if (req.method === "POST" && route === "/mentions/parse") {
+        const body = await this.readJson(req);
+        const text = String(body.text ?? "");
+        const targets = this.parseMentions(text);
+        return this.sendJson(res, 200, {
+          ok: true,
+          targets: targets.map((target) => ({
+            id: target.id,
+            name: target.name,
+            handle: target.handle,
+            online: target.online,
+            action: target.action
+          })),
+          text: this.stripMentionTokens(text, targets) || text
+        });
+      }
+      if (req.method === "POST" && route === "/mentions/send") {
+        const body = await this.readJson(req);
+        const text = String(body.text ?? "").trim();
+        if (!text) throw new HttpError(400, "text \u4E0D\u80FD\u4E3A\u7A7A");
+        const devices = this.hub.getOtherDevices();
+        const wanted = Array.isArray(body.handles) ? body.handles.map((handle) => String(handle).toLowerCase()) : [];
+        const targets = wanted.length > 0 ? devices.filter((device) => wanted.includes(String(device.handle ?? "").toLowerCase())).map((device) => ({
+          id: device.id,
+          name: device.name,
+          handle: device.handle ?? device.name,
+          online: device.online,
+          action: device.actions.includes("task") ? "task" : "notify"
+        })) : this.parseMentions(text);
+        if (targets.length === 0) throw new HttpError(400, "\u6CA1\u6709\u5339\u914D\u7684\u8BBE\u5907\uFF0C\u8BF7\u5148\u5199 @\u8BBE\u5907\u540D");
+        void this.forwardMention({ sessionId: String(body.sessionId ?? ""), text, targets }).catch((error) => {
+          this.log("warn", `@\u63D0\u53CA\u6295\u9012\u5931\u8D25: ${error instanceof Error ? error.message : String(error)}`);
+        });
+        return this.sendJson(res, 200, { ok: true, record: this.mentionRecords[0] });
+      }
+      if (req.method === "POST" && route === "/mentions/clear") {
+        this.mentionRecords.length = 0;
+        return this.sendJson(res, 200, { ok: true });
       }
       if (req.method === "POST" && route === "/device/call") {
         const body = await this.readJson(req);
@@ -2432,6 +2626,12 @@ function describeEvent(event) {
   if (stage === "error") return String(event.message ?? "\u6267\u884C\u5931\u8D25");
   if (stage === "thinking") return "\u601D\u8003\u4E2D\u2026";
   return JSON.stringify(event).slice(0, 200);
+}
+function contentText(content) {
+  if (!Array.isArray(content)) return "";
+  return content.map(
+    (block) => block && typeof block === "object" && block.type === "text" ? String(block.text ?? "") : ""
+  ).filter(Boolean).join("\n").trim();
 }
 function summarizeResult(result, limit = 500) {
   const text = result.text ?? result.answer ?? result.stdout ?? result.message;
