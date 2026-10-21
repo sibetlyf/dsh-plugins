@@ -7,7 +7,7 @@ DeepSeek Harness 第三方插件集合，各插件为独立可安装的 Cordis b
 | [滴滴打车](plugins/dsh-plugin-didi/README.md) | 地点搜索、路线、价格预估、App 链接、审批后订单管理 | 22 项自动化测试；官方 Sandbox 只读联调通过 |
 | [美团外卖](plugins/dsh-plugin-meituan/README.md) | 独立浏览器搜索、菜单读取、审批后点击/加购 | 10 项自动化测试；真实登录/加购尚未验证 |
 | [腾讯会议](plugins/dsh-plugin-tencent-meeting/README.md) | 会议、录制、转写、纪要及审批后敏感操作 | 10 项客户端自动化测试 |
-| [跨端中枢（网关）](plugins/dsh-plugin-gateway/README.md) | nanoMuse 网关长连接、侧边栏跨端面板、消息/任务双向转发、审批回传、远程截屏/命令/打开链接 | DSH 0.2.1-alpha.1 Web 实测：手机→电脑 task、电脑→手机 notify/task、设置页与侧边栏渲染通过；`shell`/`open` 默认关闭 |
+| [跨端中枢（网关）](plugins/dsh-plugin-gateway/README.md) | nanoMuse 网关长连接、对话内 @设备（候选菜单 + 高亮胶囊 + 自动投递）、侧边栏跨端面板、消息/任务双向转发、审批回传、远程截屏/命令/打开链接 | DSH 0.2.1-alpha.1 Web 实测：@ 设备候选/投递、手机→电脑 task、电脑→手机 notify/task、设置页与侧边栏渲染通过；`shell`/`open` 默认关闭 |
 
 ## 让 DSH AI 帮你安装
 

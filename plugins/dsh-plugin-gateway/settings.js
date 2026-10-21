@@ -27,7 +27,7 @@ __export(client_exports, {
   name: () => name
 });
 module.exports = __toCommonJS(client_exports);
-var import_react5 = require("react");
+var import_react6 = require("react");
 
 // src/client/GatewayPage.ts
 var import_dsh_client_ui_primitives2 = require("@deepseek-ai/dsh-client-ui-primitives");
@@ -1130,7 +1130,7 @@ function DeviceCard({
       (0, import_react4.createElement)(
         "div",
         { className: "nmx-device-main" },
-        (0, import_react4.createElement)("div", { className: "nmx-device-name" }, (0, import_react4.createElement)("span", { title: device.name }, device.name || t("unnamedDevice"))),
+        (0, import_react4.createElement)("div", { className: "nmx-device-name" }, (0, import_react4.createElement)("span", { title: device.name }, device.name || t("unnamedDevice")), device.handle ? (0, import_react4.createElement)("span", { className: "nmx-chip" }, `@${device.handle}`) : null),
         (0, import_react4.createElement)(
           "div",
           { className: "nmx-device-sub" },
@@ -1181,6 +1181,7 @@ function ComposerCard(props) {
                 type: "button",
                 key: device.id,
                 className: `nmx-pill${target === device.id ? " is-active" : ""}`,
+                title: device.handle ? `@${device.handle}` : device.name,
                 onClick: () => props.setTarget(device.id)
               },
               (0, import_react4.createElement)(Glyph, { kind: device.kind, online: device.online, size: 14, compact: true }),
@@ -1514,7 +1515,18 @@ var en = {
   stageError: "error",
   stageThinking: "thinking",
   fromDevice: "from",
-  configLabel: "Config"
+  configLabel: "Config",
+  mentionOnline: "online",
+  mentionOffline: "offline",
+  mentionSectionOnline: "Online",
+  mentionSectionOffline: "Offline",
+  mentionDockTitle: "Devices",
+  mentionDockHint: "Type @ in the composer to pick a device; the message is delivered to it",
+  mentionDockSending: "sending",
+  mentionDockDone: "delivered",
+  mentionDockPartial: "partly delivered",
+  mentionDockError: "failed",
+  mentionDockCount: "{n} online"
 };
 var zh = {
   railTitle: "\u8DE8\u7AEF",
@@ -1668,14 +1680,382 @@ var zh = {
   stageError: "\u9519\u8BEF",
   stageThinking: "\u601D\u8003",
   fromDevice: "\u6765\u81EA",
-  configLabel: "\u914D\u7F6E"
+  configLabel: "\u914D\u7F6E",
+  mentionOnline: "\u5728\u7EBF",
+  mentionOffline: "\u79BB\u7EBF",
+  mentionSectionOnline: "\u5728\u7EBF\u8BBE\u5907",
+  mentionSectionOffline: "\u79BB\u7EBF\u8BBE\u5907",
+  mentionDockTitle: "\u8DE8\u7AEF\u8BBE\u5907",
+  mentionDockHint: "\u5728\u8F93\u5165\u6846\u8F93\u5165 @ \u9009\u62E9\u8BBE\u5907\uFF0C\u6D88\u606F\u4F1A\u76F4\u63A5\u6295\u9012\u5230\u8BE5\u8BBE\u5907",
+  mentionDockSending: "\u6295\u9012\u4E2D",
+  mentionDockDone: "\u5DF2\u9001\u8FBE",
+  mentionDockPartial: "\u90E8\u5206\u9001\u8FBE",
+  mentionDockError: "\u5931\u8D25",
+  mentionDockCount: "{n} \u53F0\u5728\u7EBF"
 };
+
+// src/client/mentions.ts
+var import_react5 = require("react");
+var API2 = "/nanomuse/gateway";
+var SOURCE = "device";
+var cache = {
+  devices: [],
+  connected: false,
+  at: 0
+};
+var inflight = null;
+var lexiconListeners = /* @__PURE__ */ new Set();
+function notifyLexicon() {
+  for (const listener of [...lexiconListeners]) {
+    try {
+      listener();
+    } catch {
+    }
+  }
+}
+function refreshDevices() {
+  if (inflight) return inflight;
+  inflight = (async () => {
+    try {
+      const response = await fetch(`${API2}/devices`, { headers: { accept: "application/json" } });
+      if (!response.ok) return cache.devices;
+      const data = await response.json();
+      const next = (Array.isArray(data.devices) ? data.devices : []).map((raw) => raw).filter((item) => item && typeof item.id === "string" && typeof item.handle === "string").map((item) => ({
+        id: String(item.id),
+        name: String(item.name ?? item.id),
+        kind: String(item.kind ?? "computer"),
+        handle: String(item.handle),
+        online: item.online !== false,
+        actions: Array.isArray(item.actions) ? item.actions.map(String) : [],
+        os: String(item.os ?? "")
+      }));
+      const changed = next.length !== cache.devices.length || next.some((item, index) => {
+        const previous = cache.devices[index];
+        return !previous || previous.handle !== item.handle || previous.online !== item.online || previous.name !== item.name;
+      });
+      cache.devices = next;
+      cache.connected = Boolean(data.connected);
+      cache.at = Date.now();
+      if (changed) notifyLexicon();
+    } catch {
+    } finally {
+      inflight = null;
+    }
+    return cache.devices;
+  })();
+  return inflight;
+}
+function handles() {
+  return cache.devices.map((device) => device.handle);
+}
+function findByHandle(handle) {
+  const key = String(handle ?? "").trim().toLowerCase();
+  if (!key) return void 0;
+  return cache.devices.find((device) => device.handle.toLowerCase() === key);
+}
+function DeviceGlyph({ size = 14 }) {
+  return (0, import_react5.createElement)(
+    "svg",
+    { width: size, height: size, viewBox: "0 0 16 16", fill: "none", "aria-hidden": true },
+    (0, import_react5.createElement)("rect", { x: 2.4, y: 1.6, width: 11.2, height: 8.6, rx: 1.6, stroke: "currentColor", strokeWidth: 1.2 }),
+    (0, import_react5.createElement)("path", { d: "M8 10.4v3M5.4 13.6h5.2", stroke: "currentColor", strokeWidth: 1.2, strokeLinecap: "round" })
+  );
+}
+var chipStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 4,
+  padding: "0 7px",
+  margin: "0 2px",
+  borderRadius: 999,
+  fontSize: "0.92em",
+  lineHeight: 1.7,
+  fontWeight: 500,
+  verticalAlign: "baseline",
+  whiteSpace: "nowrap",
+  color: "var(--dsw-alias-brand-primary)",
+  background: "color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent)",
+  border: "1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 32%, transparent)"
+};
+function DeviceChip({ node, raw }) {
+  const data = node?.data ?? {};
+  const online = data.online !== false;
+  const label = String(data.name ?? data.handle ?? "");
+  return (0, import_react5.createElement)(
+    "span",
+    {
+      style: chipStyle,
+      title: data.name && data.handle ? `@${data.handle} \xB7 ${data.name}` : raw || label,
+      "data-device-chip": data.handle || true
+    },
+    (0, import_react5.createElement)("span", {
+      "aria-hidden": true,
+      style: {
+        width: 6,
+        height: 6,
+        borderRadius: 999,
+        flex: "none",
+        display: "inline-block",
+        background: online ? "var(--dsw-alias-state-success-primary)" : "var(--dsw-alias-state-idle-primary, #9ca3af)"
+      }
+    }),
+    (0, import_react5.createElement)("span", { style: { whiteSpace: "nowrap" } }, `@${label}`)
+  );
+}
+function statusOf(t, status) {
+  if (status === "done") return { text: t("mentionDockDone"), color: "var(--dsw-alias-state-success-primary)" };
+  if (status === "partial") return { text: t("mentionDockPartial"), color: "var(--dsw-alias-state-warn-primary, #d97706)" };
+  if (status === "error") return { text: t("mentionDockError"), color: "var(--dsw-alias-state-error-primary)" };
+  return { text: t("mentionDockSending"), color: "var(--dsw-alias-label-secondary)" };
+}
+function MentionDock({ t, sessionId }) {
+  const [state, setState] = (0, import_react5.useState)({ connected: false, items: [] });
+  (0, import_react5.useEffect)(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const response = await fetch(`${API2}/mentions?limit=20`, { headers: { accept: "application/json" } });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!alive) return;
+        setState({ connected: Boolean(data.connected), items: Array.isArray(data.items) ? data.items : [] });
+      } catch {
+      }
+    };
+    void load();
+    const timer = setInterval(() => void load(), 4e3);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+  const items = state.items.filter((item) => !sessionId || !item.sessionId || String(item.sessionId) === String(sessionId)).slice(0, 3);
+  if (!state.connected && items.length === 0) return null;
+  const onlineCount = cache.devices.filter((device) => device.online).length;
+  return (0, import_react5.createElement)(
+    "div",
+    {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        flexWrap: "wrap",
+        padding: "2px 4px",
+        fontSize: 11,
+        color: "var(--dsw-alias-label-secondary)"
+      }
+    },
+    (0, import_react5.createElement)(
+      "span",
+      { style: { display: "inline-flex", alignItems: "center", gap: 4, flex: "none" } },
+      (0, import_react5.createElement)("span", { style: { display: "inline-flex", color: "var(--dsw-alias-brand-primary)" } }, (0, import_react5.createElement)(DeviceGlyph, { size: 12 })),
+      (0, import_react5.createElement)("span", { style: { fontWeight: 500 } }, t("mentionDockTitle")),
+      state.connected && onlineCount > 0 ? (0, import_react5.createElement)("span", { style: { opacity: 0.7 } }, t("mentionDockCount", { n: onlineCount })) : null
+    ),
+    items.length === 0 ? (0, import_react5.createElement)("span", { style: { opacity: 0.65 } }, t("mentionDockHint")) : (0, import_react5.createElement)(
+      "div",
+      { style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", minWidth: 0 } },
+      items.map((item) => {
+        const status = statusOf(t, item.status);
+        const targets = Array.isArray(item.targets) ? item.targets : [];
+        const label = targets.map((target) => `@${target.handle}`).join(" ") || item.origin || "";
+        const tooltip = [item.text, ...Array.isArray(item.results) ? item.results.map((result) => result.error || result.reply).filter(Boolean) : []].filter(Boolean).join("\n\n");
+        return (0, import_react5.createElement)(
+          "span",
+          { key: item.id, title: tooltip, style: { display: "inline-flex", alignItems: "center", gap: 5, minWidth: 0, maxWidth: 280 } },
+          (0, import_react5.createElement)("span", { style: { fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, label),
+          (0, import_react5.createElement)("span", { style: { color: status.color, flex: "none" } }, `\xB7 ${status.text}`)
+        );
+      })
+    )
+  );
+}
+function createDeviceSource(t) {
+  return {
+    trigger: "@",
+    name: SOURCE,
+    order: 1,
+    showGroupTitle: false,
+    warm() {
+      void refreshDevices();
+    },
+    async candidates(_session, { query, signal }) {
+      if (cache.devices.length === 0) await refreshDevices();
+      if (signal?.aborted) return [];
+      const needle = String(query ?? "").trim().toLowerCase();
+      const rows = cache.devices.filter((device) => {
+        if (!needle) return true;
+        return device.name.toLowerCase().includes(needle) || device.handle.toLowerCase().includes(needle);
+      });
+      return rows.slice().sort((a, b) => Number(b.online) - Number(a.online)).map((device) => ({
+        name: device.name,
+        label: device.name,
+        description: `@${device.handle} \xB7 ${device.online ? t("mentionOnline") : t("mentionOffline")}`,
+        icon: DeviceGlyph,
+        section: device.online ? t("mentionSectionOnline") : t("mentionSectionOffline"),
+        value: device.handle
+      }));
+    },
+    lexicon() {
+      return handles();
+    },
+    subscribeLexicon(_session, listener) {
+      lexiconListeners.add(listener);
+      return () => {
+        lexiconListeners.delete(listener);
+      };
+    },
+    onPick({ candidate }) {
+      const device = findByHandle(candidate?.value);
+      const handle = device ? device.handle : String(candidate?.value ?? "");
+      if (!handle) return void 0;
+      return { text: `@${handle} ` };
+    },
+    openReference() {
+      return false;
+    }
+  };
+}
+var deviceRule = {
+  id: SOURCE,
+  order: 10,
+  match(text, from, context) {
+    let names = null;
+    try {
+      const fromFacts = context?.read?.("deviceHandles");
+      if (Array.isArray(fromFacts) && fromFacts.length > 0) names = fromFacts.map(String);
+    } catch {
+    }
+    if (!names) names = handles();
+    if (!names || names.length === 0) return void 0;
+    const lowered = names.map((name2) => name2.toLowerCase());
+    const tokens = /(?<![\p{L}\p{N}_@])@([\p{L}\p{N}_-]+)/gu;
+    tokens.lastIndex = from;
+    for (let match = tokens.exec(text); match !== null; match = tokens.exec(text)) {
+      const handle = match[1] ?? "";
+      if (!lowered.includes(handle.toLowerCase())) continue;
+      const device = findByHandle(handle);
+      return {
+        id: SOURCE,
+        start: match.index,
+        end: match.index + match[0].length,
+        data: {
+          handle,
+          name: device?.name ?? handle,
+          online: device ? device.online : true,
+          kind: device?.kind
+        }
+      };
+    }
+    return void 0;
+  }
+};
+function whenService(ctx, name2, run) {
+  const direct = typeof ctx.get === "function" ? ctx.get(name2) : void 0;
+  if (direct) return run(direct) ?? (() => void 0);
+  if (typeof ctx.inject === "function") {
+    let inner;
+    let injected = void 0;
+    try {
+      injected = ctx.inject([name2], (scope) => {
+        const service = typeof scope?.get === "function" ? scope.get(name2) : scope?.[name2];
+        if (service) inner = run(service);
+      });
+    } catch {
+    }
+    if (typeof injected === "function") {
+      return () => {
+        try {
+          if (typeof inner === "function") inner();
+        } catch {
+        }
+        try {
+          injected?.();
+        } catch {
+        }
+      };
+    }
+  }
+  let stopped = false;
+  let cleanup;
+  const timer = setInterval(() => {
+    if (stopped) return;
+    const service = typeof ctx.get === "function" ? ctx.get(name2) : void 0;
+    if (!service) return;
+    clearInterval(timer);
+    cleanup = run(service) ?? void 0;
+  }, 400);
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+    cleanup?.();
+  };
+}
+function registerMentions(ctx, t) {
+  ctx.effect(() => {
+    void refreshDevices();
+    const timer = setInterval(() => void refreshDevices(), 15e3);
+    return () => clearInterval(timer);
+  }, "dsh-gateway: mention device cache");
+  ctx.effect(
+    () => whenService(ctx, "inputTriggers", (service) => {
+      if (!service || typeof service.registerSource !== "function") return;
+      const dispose = service.registerSource(createDeviceSource(t));
+      return () => {
+        try {
+          dispose?.();
+        } catch {
+        }
+      };
+    }),
+    "dsh-gateway: @device source"
+  );
+  ctx.effect(
+    () => whenService(ctx, "uiConversation", (service) => {
+      if (!service?.userText || typeof service.userText.register !== "function") return;
+      const dispose = service.userText.register(deviceRule);
+      return () => {
+        try {
+          dispose?.();
+        } catch {
+        }
+      };
+    }),
+    "dsh-gateway: device user text rule"
+  );
+  ctx.effect(
+    () => ctx.slots.inject("conversation.user.text.node", () => {
+      try {
+        return ctx.slots.register(
+          { name: "conversation.user.text.node", key: SOURCE, priority: 100 },
+          DeviceChip
+        );
+      } catch {
+        return void 0;
+      }
+    }),
+    "dsh-gateway: device chip"
+  );
+  ctx.effect(
+    () => ctx.slots.inject("conversation.composer.dock", () => {
+      try {
+        return ctx.slots.register(
+          { name: "conversation.composer.dock", id: "gateway-mentions", order: 6 },
+          ((props) => (0, import_react5.createElement)(MentionDock, { ...props, t }))
+        );
+      } catch {
+        return void 0;
+      }
+    }),
+    "dsh-gateway: mention dock"
+  );
+}
 
 // src/client/index.ts
 var name = "dsh-gateway-client";
 var inject = ["slots", "locale"];
 function RailIcon({ size = 18 }) {
-  return (0, import_react5.createElement)(IconHub, { size });
+  return (0, import_react6.createElement)(IconHub, { size });
 }
 function apply(ctx) {
   const slots = ctx.slots;
@@ -1683,6 +2063,7 @@ function apply(ctx) {
   ctx.effect(() => locale.register("nanomuse-gateway", { en, zh }), "dsh-gateway: dictionaries");
   const t = locale.bind("nanomuse-gateway");
   ctx.effect(() => ensureStyles(), "dsh-gateway: styles");
+  registerMentions(ctx, t);
   slots.inject(
     "sidebar.panellist",
     () => slots.register(
@@ -1697,7 +2078,7 @@ function apply(ctx) {
   );
   slots.inject(
     "main",
-    () => slots.register({ name: "main", key: "nanomuse-gateway" }, (() => (0, import_react5.createElement)(GatewayPage, { t })))
+    () => slots.register({ name: "main", key: "nanomuse-gateway" }, (() => (0, import_react6.createElement)(GatewayPage, { t })))
   );
   slots.inject(
     "settings.section",
@@ -1708,14 +2089,14 @@ function apply(ctx) {
         order: 34,
         label: () => t("settingsTitle")
       },
-      (() => (0, import_react5.createElement)(SettingsPage, { t }))
+      (() => (0, import_react6.createElement)(SettingsPage, { t }))
     )
   );
   slots.inject(
     "plugins.row.config",
     () => slots.register(
       { name: "plugins.row.config", key: "dsh-plugin-gateway#gateway" },
-      (() => (0, import_react5.createElement)(SettingsPage, { t, embedded: true }))
+      (() => (0, import_react6.createElement)(SettingsPage, { t, embedded: true }))
     )
   );
 }
