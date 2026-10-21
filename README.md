@@ -118,6 +118,52 @@
 
 远程任务的审批卡片默认发回发起设备，由发起者在手机上确认；可在设置中关闭。
 
+## 跨端数据是怎么传的
+
+跨端页面本身不传 HTML，也不传视频。分两层：
+
+```text
+DSH 跨端页面（本机 React）
+  │  fetch /nanomuse/gateway/snapshot（约 2.5 秒）
+  ▼
+DSH Host 插件
+  │  WS /v1/hub
+  ▼
+nanoMuse Gateway  ──WS──▶ 手机 / 另一台电脑
+```
+
+| 内容 | 是否跨设备 | 形式 |
+|---|---|---|
+| 跨端页面 HTML/JS | 否 | 本机 DSH 客户端渲染 |
+| 连接状态、设备列表、动态、任务进度 | 是（本机页面间） | `/snapshot` JSON |
+| 通知/任务指令 | 是 | `call {id,to,action,args}` |
+| 工具步骤、中间文本、审批 | 是 | `event {id,body}` |
+| 最终回答、错误 | 是 | `result {id,ok,body}` |
+| 屏幕截图 | 是（按需单张） | `screen` 结果中的 base64 JPEG |
+| 实时屏幕/浏览器视频 | 否 | 当前未实现 |
+
+一次 `task` 的可视化是语义事件，不是像素：
+
+```json
+{ "type": "call", "id": "call_x", "to": "device-id", "action": "task",
+  "args": { "text": "打开浏览器搜索…", "from": "LAPTOP" } }
+```
+
+目标设备回：
+
+```json
+{ "type": "event", "id": "call_x",
+  "body": { "stage": "tool", "name": "browser.click", "summary": "已点击搜索框" } }
+```
+
+页面把这些事件显示成步骤卡片；`screen` 只截一张图，当前页面只显示尺寸，不渲染图像。
+
+如果要“操作浏览器时实时看画面”，需要额外做帧通道：
+
+- **每步一张截图**：每次工具调用后发 `event {stage:"frame", mime, data, seq}`，发起端只显示最新帧，1–2 fps 即可；
+- **浏览器 CDP screencast**：只抓浏览器视口，比整屏更小更稳定；
+- **WebRTC**：5–10 fps 低延迟视频，需要新增媒体通道，不能只靠 JSON hub。
+
 ## 协议
 
 与 `nanoMuse` Hub 协议一致（`docs/zh/hub.md`）：
