@@ -2027,7 +2027,7 @@ function registerMentions(ctx, t) {
     () => ctx.slots.inject("conversation.user.text.node", () => {
       try {
         return ctx.slots.register(
-          { name: "conversation.user.text.node", key: SOURCE, priority: 100 },
+          { name: "conversation.user.text.node", key: SOURCE, priority: 100, locale: "nanomuse-gateway" },
           DeviceChip
         );
       } catch {
@@ -2040,7 +2040,7 @@ function registerMentions(ctx, t) {
     () => ctx.slots.inject("conversation.composer.dock", () => {
       try {
         return ctx.slots.register(
-          { name: "conversation.composer.dock", id: "gateway-mentions", order: 6 },
+          { name: "conversation.composer.dock", id: "gateway-mentions", order: 6, locale: "nanomuse-gateway" },
           ((props) => (0, import_react5.createElement)(MentionDock, { ...props, t }))
         );
       } catch {
