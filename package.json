@@ -11,12 +11,14 @@
     ".": "./plugins/dsh-plugin-gateway/index.js",
     "./client": "./plugins/dsh-plugin-gateway/settings.js",
     "./cordis.patch.yml": "./plugins/dsh-plugin-gateway/cordis.patch.yml",
-    "./locale/*.json": "./plugins/dsh-plugin-gateway/locale/*.json",
-    "./icon": "./plugins/dsh-plugin-gateway/icon.svg",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
     "./package.json": "./package.json"
   },
   "files": [
     "plugins/dsh-plugin-gateway/**/*",
+    "locale/*.json",
+    "icon.svg",
     "LICENSE"
   ],
   "peerDependencies": {
