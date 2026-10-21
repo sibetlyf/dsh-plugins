@@ -1017,6 +1017,8 @@ function prettyPlatform2() {
 
 // src/task-runner.ts
 import { randomUUID as randomUUID3 } from "node:crypto";
+import { mkdir as mkdir2, readFile as readFile3, writeFile as writeFile2 } from "node:fs/promises";
+import { join as join3 } from "node:path";
 var TASK_TIMEOUT_MS = 15 * 6e4;
 var APPROVAL_TIMEOUT_S = 180;
 var TaskUnavailable = class extends Error {
@@ -1030,7 +1032,31 @@ var TaskRunner = class {
   byCall = /* @__PURE__ */ new Map();
   byConversation = /* @__PURE__ */ new Map();
   pendingApprovals = /* @__PURE__ */ new Map();
+  sessions = /* @__PURE__ */ new Map();
+  storePath = join3(stateDir(), "cross-device-sessions.json");
+  workspace = join3(stateDir(), "cross-device");
+  storeLoaded = false;
   approvalSeq = 0;
+  async loadSessions() {
+    if (this.storeLoaded) return;
+    this.storeLoaded = true;
+    try {
+      const parsed = JSON.parse(await readFile3(this.storePath, "utf8"));
+      for (const [key, value] of Object.entries(parsed)) {
+        if (typeof value === "string" && value) this.sessions.set(key, value);
+      }
+    } catch {
+    }
+  }
+  async saveSessions() {
+    try {
+      await mkdir2(stateDir(), { recursive: true });
+      await writeFile2(this.storePath, `${JSON.stringify(Object.fromEntries(this.sessions), null, 2)}
+`, "utf8");
+    } catch (error) {
+      this.options.log("warn", `\u8DE8\u7AEF\u4F1A\u8BDD\u6620\u5C04\u4FDD\u5B58\u5931\u8D25: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   attach() {
     const on = this.ctx;
     const offEvent = on.on("session/event", (session, event) => {
@@ -1059,7 +1085,7 @@ var TaskRunner = class {
     const text = String(args.text ?? "").trim();
     if (!text) throw new Error("\u8FDC\u7A0B\u4EFB\u52A1\u7F3A\u5C11 text");
     const controller = this.controller();
-    const conversation = String(args.conversation ?? "").trim() || call.from.id || "device";
+    const conversation = String(args.conversation ?? "").trim() || "cross-device";
     const sessionId = await this.sessionFor(controller, call, conversation);
     const language = String(args.language ?? "").trim();
     const runId = this.options.onStart(call, text);
@@ -1137,7 +1163,7 @@ var TaskRunner = class {
   /** `stop {call?}` or `stop {conversation?}` from the device that asked. */
   async stop(call, args) {
     const byCallId = String(args.call ?? "").trim();
-    const conversation = String(args.conversation ?? "").trim() || call.from.id;
+    const conversation = String(args.conversation ?? "").trim() || "cross-device";
     const run = (byCallId ? this.byCall.get(byCallId) : void 0) ?? this.byConversation.get(conversationKey(call.from.id, conversation));
     if (!run || run.call.from.id && run.call.from.id !== call.from.id) return { stopped: false };
     run.stopped = true;
@@ -1168,13 +1194,28 @@ var TaskRunner = class {
     return service;
   }
   async sessionFor(controller, call, conversation) {
-    const previous = this.byConversation.get(conversationKey(call.from.id, conversation));
+    const key = conversationKey(call.from.id, conversation);
+    const previous = this.byConversation.get(key);
     if (previous) {
       throw new Error("\u8FD9\u4E2A\u8BBE\u5907\u7684\u4E0A\u4E00\u9879\u4EFB\u52A1\u8FD8\u5728\u8FD0\u884C\uFF0C\u8BF7\u7A0D\u540E\u518D\u53D1");
     }
-    const created = await controller.create({});
+    await this.loadSessions();
+    await mkdir2(this.workspace, { recursive: true }).catch(() => void 0);
+    const existing = this.sessions.get(key);
+    if (existing) {
+      try {
+        const adopted = await controller.create({ sessionId: existing, cwd: this.workspace });
+        return adopted.sessionId;
+      } catch {
+        this.sessions.delete(key);
+        await this.saveSessions();
+      }
+    }
+    const created = await controller.create({ cwd: this.workspace });
     const sessionId = created.sessionId;
-    await controller.rename({ sessionId, title: `\u6765\u81EA ${call.from.name || call.from.id}` }).catch(() => void 0);
+    this.sessions.set(key, sessionId);
+    await this.saveSessions();
+    await controller.rename({ sessionId, title: `\u8DE8\u7AEF \xB7 ${call.from.name || call.from.id}` }).catch(() => void 0);
     return sessionId;
   }
   onSessionEvent(session, event) {
@@ -1704,7 +1745,7 @@ ${value.stderr}`);
 // src/index.ts
 var name = "dsh-gateway";
 var API_PREFIX = "/nanomuse/gateway";
-var PLUGIN_VERSION = "0.3.1";
+var PLUGIN_VERSION = "0.3.2";
 var BODY_LIMIT = 2 * 1024 * 1024;
 var JOB_LIMIT = 16;
 var ACTIVITY_LIMIT = 240;
@@ -1841,31 +1882,64 @@ var GatewayPluginService = class extends Service {
       '2. \u7528\u6237\u6CA1\u6709\u4F7F\u7528 @\u3001\u800C\u662F\u660E\u786E\u8BF4\u201C\u544A\u8BC9\u624B\u673A\u2026\u201D\u201C\u63D0\u9192\u7535\u8111\u2026\u201D\u65F6\uFF0C\u7528 `device_send`\uFF0Cmode="notify"\uFF1B\u8BF4\u201C\u8BA9\u624B\u673A/\u53E6\u4E00\u53F0\u7535\u8111\u505A\u2026\u201D\u65F6\u7528 mode="task" \u6216 `delegate`\u3002',
       "3. \u9700\u8981\u8FDC\u7A0B\u547D\u4EE4\u3001\u622A\u56FE\u6216\u6253\u5F00\u94FE\u63A5\u65F6\uFF0C\u5206\u522B\u7528 `device_shell`\u3001`device_screen`\u3001`device_open`\uFF0C\u76EE\u6807\u8BBE\u5907\u53EF\u80FD\u56E0\u6743\u9650\u62D2\u7EDD\u3002",
       "4. \u5148\u7528 `devices` \u786E\u8BA4\u8BBE\u5907\u540D\u6216 `@handle`\uFF1B\u5BF9\u65B9\u8BBE\u5907\u79BB\u7EBF\u65F6\u4E0D\u8981\u5047\u88C5\u5DF2\u53D1\u9001\u3002",
-      "5. \u5176\u4ED6\u8BBE\u5907\u53D1\u6765\u7684 task \u4F1A\u5728\u672C\u673A\u65B0\u5EFA\u6807\u9898\u4E3A\u300C\u6765\u81EA <\u8BBE\u5907>\u300D\u7684\u4F1A\u8BDD\uFF0C\u7B54\u6848\u4F1A\u56DE\u4F20\u7ED9\u5BF9\u65B9\u3002"
+      "5. \u5176\u4ED6\u8BBE\u5907\u53D1\u6765\u7684 task \u4F1A\u8FDB\u5165\u672C\u673A\u4E13\u95E8\u7684\u5DE5\u4F5C\u533A `cross-device`\uFF0C\u5E76\u590D\u7528\u540C\u4E00\u53F0\u8BBE\u5907\u7684\u4F1A\u8BDD\u300C\u8DE8\u7AEF \xB7 <\u8BBE\u5907>\u300D\uFF1B\u7B54\u6848\u4F1A\u56DE\u4F20\u7ED9\u5BF9\u65B9\u3002"
     ].join("\n");
   }
   // ── @device mentions ─────────────────────────────────────────────────
   attachMentionListener() {
     const on = this.ctx;
-    return on.on("session/event", (session, event) => {
-      if (!event || event.type !== "user/message") return;
-      const message = event.data?.message ?? event.data;
-      const id = String(message?.id ?? `${session?.id ?? ""}:${event.seq ?? ""}`);
-      if (!id || this.seenUserMessages.has(id)) return;
-      this.seenUserMessages.add(id);
-      if (this.seenUserMessages.size > 500) {
-        const first = this.seenUserMessages.values().next().value;
-        if (first) this.seenUserMessages.delete(first);
-      }
-      const text = contentText(message?.content);
-      if (!text) return;
-      if (text.startsWith("[\u8FD9\u662F\u6765\u81EA") || text.startsWith("[\u6765\u81EA\u8FDC\u7A0B\u8BBE\u5907") || text.startsWith("[\u672C\u5730\u63D0\u793A]") || text.startsWith("Current runtime context") || text.startsWith("### nanoMuse \u8DE8\u7AEF\u4E2D\u67A2")) {
-        return;
-      }
-      const targets = this.parseMentions(text);
-      if (targets.length === 0) return;
-      void this.forwardMention({ sessionId: String(session?.id ?? ""), text, targets });
-    });
+    return on.on(
+      "agent/pre-step",
+      async (payload, next) => {
+        const decision = await next();
+        if (!decision || decision.kind === "reject") return decision;
+        const messages = Array.isArray(decision.messages) ? decision.messages : [];
+        const pending = [];
+        for (const message of messages) {
+          const id = String(message?.id ?? "");
+          if (!id || this.seenUserMessages.has(id)) continue;
+          const text = contentText(message?.content);
+          if (!text) continue;
+          if (text.startsWith("[\u8FD9\u662F\u6765\u81EA") || text.startsWith("[\u6765\u81EA\u8FDC\u7A0B\u8BBE\u5907") || text.startsWith("[\u672C\u5730\u63D0\u793A]") || text.startsWith("[\u8DE8\u7AEF\u8FD4\u56DE") || text.startsWith("Current runtime context") || text.startsWith("### nanoMuse \u8DE8\u7AEF\u4E2D\u67A2")) {
+            continue;
+          }
+          const targets = this.parseMentions(text);
+          if (targets.length === 0) continue;
+          this.seenUserMessages.add(id);
+          if (this.seenUserMessages.size > 500) {
+            const first = this.seenUserMessages.values().next().value;
+            if (first) this.seenUserMessages.delete(first);
+          }
+          pending.push({ id, text, targets });
+        }
+        if (pending.length === 0 || payload.signal?.aborted) return decision;
+        const sessionId = String(payload.agent?.session?.id ?? "");
+        const answers = [];
+        for (const item of pending) {
+          try {
+            const record = await this.forwardMention({ sessionId, text: item.text, targets: item.targets });
+            const lines = record.results.map(
+              (result) => `@${result.handle}: ${result.status === "ok" ? result.reply || "\u5DF2\u9001\u8FBE" : result.error || "\u5931\u8D25"}`
+            );
+            answers.push(`[\u8DE8\u7AEF\u8FD4\u56DE \xB7 ${item.targets.map((target) => `@${target.handle}`).join(" ")}]
+${lines.join("\n")}`);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            answers.push(`[\u8DE8\u7AEF\u8FD4\u56DE\u5931\u8D25]
+${message}`);
+          }
+        }
+        if (answers.length === 0) return decision;
+        const injected = {
+          id: randomUUID4(),
+          role: "user",
+          content: [{ type: "text", text: answers.join("\n\n") }],
+          source: { kind: "user", rpcId: `gateway-mention-${Date.now()}` }
+        };
+        return { ...decision, messages: [...messages, injected] };
+      },
+      true
+    );
   }
   /** The devices a message mentions, matched case-insensitively by their composer handle. */
   parseMentions(text) {
@@ -1940,6 +2014,10 @@ ${record.error}`.slice(-700) });
     await Promise.all(
       input.targets.map(async (target) => {
         const started = Date.now();
+        if (!target.online) {
+          settle(target.handle, { status: "error", error: "\u8BBE\u5907\u79BB\u7EBF", durationMs: 0 });
+          return;
+        }
         try {
           const result = target.action === "task" ? await this.hub.call(
             target.id,

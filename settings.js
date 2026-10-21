@@ -113,7 +113,7 @@ var GatewayStore = class {
     if (this.timer) return;
     this.timer = setInterval(() => {
       void this.refresh();
-    }, 2500);
+    }, 1500);
   }
   stop() {
     if (this.timer) clearInterval(this.timer);
@@ -1454,7 +1454,7 @@ var en = {
   permAutoSync: "Also point the nanoMuse core plugin at this gateway",
   permAutoSyncHint: "Only applies when the nanoMuse plugin is installed.",
   permTask: "Run tasks from other devices",
-  permTaskHint: "A task opens a session named \u201CFrom <device>\u201D and runs this computer\u2019s agent.",
+  permTaskHint: "A task joins the dedicated workspace and reuses the \u201CCross-device \xB7 <device>\u201D session.",
   permNotify: "Receive notifications",
   permNotifyHint: "A notice from the phone appears here and as a system notification.",
   permScreen: "Let other devices take a screenshot",
@@ -1619,7 +1619,7 @@ var zh = {
   permAutoSync: "\u540C\u65F6\u8BA9 nanoMuse \u6838\u5FC3\u63D2\u4EF6\u4F7F\u7528\u8FD9\u4E2A\u7F51\u5173",
   permAutoSyncHint: "\u53EA\u6709\u5B89\u88C5\u4E86 nanoMuse \u63D2\u4EF6\u65F6\u624D\u751F\u6548\u3002",
   permTask: "\u63A5\u53D7\u5176\u4ED6\u8BBE\u5907\u7684\u4EFB\u52A1",
-  permTaskHint: "\u4EFB\u52A1\u4F1A\u65B0\u5EFA\u6807\u9898\u4E3A\u300C\u6765\u81EA <\u8BBE\u5907>\u300D\u7684\u4F1A\u8BDD\uFF0C\u7531\u672C\u673A Agent \u6267\u884C\u3002",
+  permTaskHint: "\u4EFB\u52A1\u4F1A\u8FDB\u5165\u4E13\u7528\u5DE5\u4F5C\u533A\uFF0C\u5E76\u590D\u7528\u300C\u8DE8\u7AEF \xB7 <\u8BBE\u5907>\u300D\u4F1A\u8BDD\uFF0C\u7531\u672C\u673A Agent \u6267\u884C\u3002",
   permNotify: "\u63A5\u6536\u63D0\u9192",
   permNotifyHint: "\u624B\u673A\u53D1\u6765\u7684\u901A\u77E5\u4F1A\u663E\u793A\u5728\u8FD9\u91CC\uFF0C\u5E76\u5C3D\u91CF\u5F39\u51FA\u7CFB\u7EDF\u901A\u77E5\u3002",
   permScreen: "\u5141\u8BB8\u5176\u4ED6\u8BBE\u5907\u622A\u5C4F",
@@ -1823,7 +1823,7 @@ function MentionDock({ t, sessionId }) {
       }
     };
     void load();
-    const timer = setInterval(() => void load(), 4e3);
+    const timer = setInterval(() => void load(), 1e3);
     return () => {
       alive = false;
       clearInterval(timer);
