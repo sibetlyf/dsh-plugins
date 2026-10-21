@@ -19,20 +19,22 @@
 最新版：
 
 ```powershell
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-gateway"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-gateway"
 ```
 
 固定版本：
 
 ```powershell
 dsh plugin --profile web remove dsh-plugin-gateway
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.0&path:/plugins/dsh-plugin-gateway"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.0"
 ```
 
-- `&path:` 选择仓库里的插件子目录；`main` 可换成 tag 或 commit。
-- 整段 spec 要用引号包住，因为 `&` 和 `#` 在 shell 里有特殊含义。
+- `publish/dsh-plugin-gateway` 分支的仓库根就是这个插件；`dsh-plugin-gateway-v0.3.0` 是同一个根目录的 tag。
+- 也可把 tag 换成 commit；`main` 的根目录是整个插件集合，不是单一 bundle，不能直接安装。
+- 整段 spec 要用引号包住，因为 `#` 在 PowerShell 中会被当作注释。
 - 安装或更新后正常停止并重新启动同一个 profile，再刷新 DSH Web 页面。
 - 卸载：`dsh plugin --profile web remove dsh-plugin-gateway`。
+- 维护者发布：`git subtree split --prefix=plugins/dsh-plugin-gateway -b publish/dsh-plugin-gateway`，然后 `git push --force origin publish/dsh-plugin-gateway`。
 
 ## 展示方式
 
