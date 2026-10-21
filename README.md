@@ -27,24 +27,30 @@ DeepSeek Harness 第三方插件集合，各插件为独立可安装的 Cordis b
 
 ### 通过 GitHub ref 安装（推荐）
 
-每个插件是仓库里的一个子目录，用 `&path:` 指定；整段 spec 必须加引号，因为 `&`/`#` 在 shell 里有特殊含义：
+多插件仓库用 **每个插件一个发布分支**：`publish/<插件目录>` 分支的仓库根就是该插件，安装时不需要 `&path`：
 
 ```sh
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-didi"
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-meituan"
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-tencent-meeting"
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-gateway"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-didi"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-tencent-meeting"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-gateway"
 ```
 
-只安装其中一个时，仅执行对应行。`main` 可以换成 tag 或 commit 锁定版本，例如网关插件：
+只安装其中一个时，仅执行对应行。需要锁定版本时用 tag 或 commit，例如网关插件：
 
 ```sh
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.0&path:/plugins/dsh-plugin-gateway"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.0"
 ```
 
-安装器会处理 profile 依赖与 bundle 选择，无需手动编辑 profile 配置。
+整段 spec 要加引号，因为 `#` 在 PowerShell 中会被当作注释。安装器会处理 profile 依赖与 bundle 选择，无需手动编辑 profile 配置。
 
-> 这是多插件仓库，**不要**执行 `dsh plugin --profile web add github:sibetlyf/dsh-plugins#main`：仓库根目录不是一个 bundle。必须保留 `&path:/plugins/<插件目录>`；私有仓库需要配置 Git token。
+> 这是多插件仓库，**不要**执行 `dsh plugin --profile web add github:sibetlyf/dsh-plugins#main`：`main` 根目录不是一个 bundle。请使用上面的 `publish/<插件目录>` 分支或对应 tag；私有仓库需要配置 Git token。
+
+维护者更新发布分支：
+
+```sh
+git subtree split --prefix=plugins/dsh-plugin-gateway -b publish/dsh-plugin-gateway
+git push --force origin publish/dsh-plugin-gateway
+```
 
 ### 本地源码安装（可选）
 
@@ -83,14 +89,14 @@ dsh web
 
 ### 更新与卸载
 
-GitHub ref 更新（`main` 跟随最新；固定 tag 时把 `main` 换成新 tag）：
+GitHub ref 更新（`publish/<插件>` 跟随该发布分支；固定 tag 时把分支换成新 tag）：
 
 ```sh
 dsh plugin --profile web remove dsh-plugin-gateway
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-gateway"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-gateway"
 ```
 
-其他插件同理，只替换插件名和 `&path:`。本地源码更新：
+其他插件同理，只替换插件名和发布分支。本地源码更新：
 
 ```sh
 git pull --ff-only

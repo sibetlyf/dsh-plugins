@@ -64,7 +64,7 @@ git clone https://github.com/sibetlyf/dsh-plugins.git
 | plugins/dsh-plugin-tencent-meeting | dsh-plugin-tencent-meeting | tokenRef=DSH_TENCENT_MEETING_TOKEN；timeoutMs=60000 | tencent_meeting_discover、tencent_meeting_call |
 | plugins/dsh-plugin-gateway | dsh-plugin-gateway | baseURL=http://127.0.0.1:8790；allowShell/allowOpen=false；allowTask/allowNotify/allowScreen=true | devices、device_send、delegate、device_notify、device_screen、device_shell、device_open |
 
-根目录不是 bundle，没有 npm 发布。不要直接安装整个 Git 仓库 URL 或裸包名来代替子目录；GitRef 安装必须带 `&path:/plugins/<插件目录>`。
+根目录不是 bundle，没有 npm 发布。不要直接安装整个 Git 仓库 URL 或裸包名；GitRef 安装使用 `publish/<插件目录>` 分支或对应 tag。
 
 ## 3. 安装选中的 bundle
 
@@ -74,16 +74,15 @@ git clone https://github.com/sibetlyf/dsh-plugins.git
 
 ### CLI 回退：GitRef（推荐）
 
-确认当前 DSH `--help` 支持 `plugin --profile … add`。整段 spec 加引号；`PROFILE` 换成确认过的真实 profile，`main` 可换成 tag 或 commit：
+确认当前 DSH `--help` 支持 `plugin --profile … add`。整段 spec 加引号；`PROFILE` 换成确认过的真实 profile，`publish/...` 可换成 tag 或 commit：
 
 ```sh
-dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-didi"
-dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-meituan"
-dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-tencent-meeting"
-dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#main&path:/plugins/dsh-plugin-gateway"
+dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-didi"
+dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-tencent-meeting"
+dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-gateway"
 ```
 
-只运行选中的行。需要锁定版本时把 `main` 换成 tag，例如 `#dsh-plugin-gateway-v0.3.0&path:/plugins/dsh-plugin-gateway`。每条命令检查退出码及安装器诊断；不要先在插件目录随意 `npm install` 来代替 DSH profile 安装。
+只运行选中的行。需要锁定版本时把 `publish/...` 换成 tag，例如 `#dsh-plugin-gateway-v0.3.0`。每条命令检查退出码及安装器诊断；不要先在插件目录随意 `npm install` 来代替 DSH profile 安装。
 
 ### CLI 回退：本地源码
 
