@@ -14,7 +14,7 @@
 
 ## 安装（GitHub ref）
 
-`Compatible with: dsh 0.2.1-alpha.1` · Node >= 22 · MIT
+`Compatible with: dsh 0.2.1-alpha.1 through 0.2.1-rc.2` · Node >= 22 · MIT
 
 最新版：
 
@@ -26,12 +26,13 @@ dsh plugin --profile web add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-gat
 
 ```powershell
 dsh plugin --profile web remove dsh-plugin-gateway
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.0"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.1"
 ```
 
-- `publish/dsh-plugin-gateway` 分支的仓库根就是这个插件；`dsh-plugin-gateway-v0.3.0` 是同一个根目录的 tag。
+- `publish/dsh-plugin-gateway` 分支的仓库根就是这个插件；`dsh-plugin-gateway-v0.3.1` 是同一个根目录的 tag。
 - 也可把 tag 换成 commit；`main` 的根目录是整个插件集合，不是单一 bundle，不能直接安装。
 - 整段 spec 要用引号包住，因为 `#` 在 PowerShell 中会被当作注释。
+- `0.3.1` 起 peer 依赖改为 `^0.2.1-alpha.1`，兼容 `0.2.1-rc.2`；不需要再给 `0.3.0` 授权精确版本豁免。
 - 安装或更新后正常停止并重新启动同一个 profile，再刷新 DSH Web 页面。
 - 卸载：`dsh plugin --profile web remove dsh-plugin-gateway`。
 - 维护者发布：`git subtree split --prefix=plugins/dsh-plugin-gateway -b publish/dsh-plugin-gateway`，然后 `git push --force origin publish/dsh-plugin-gateway`。

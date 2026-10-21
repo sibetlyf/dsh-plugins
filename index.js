@@ -1704,7 +1704,7 @@ ${value.stderr}`);
 // src/index.ts
 var name = "dsh-gateway";
 var API_PREFIX = "/nanomuse/gateway";
-var PLUGIN_VERSION = "0.3.0";
+var PLUGIN_VERSION = "0.3.1";
 var BODY_LIMIT = 2 * 1024 * 1024;
 var JOB_LIMIT = 16;
 var ACTIVITY_LIMIT = 240;
