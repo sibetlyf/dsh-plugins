@@ -41,7 +41,7 @@ dsh --help
 printf 'profile=%s\nprofile_dir=%s\ndsh_home=%s\nweb_url=%s\n' "$DSH_PROFILE" "$DSH_PROFILE_DIR" "$DSH_HOME" "$DSH_WEB_URL"
 ```
 
-不要执行无过滤的 `env`/`Get-ChildItem Env:` 或打印凭据文件。当前声明兼容 Node >=22、DSH **0.2.1-alpha.1**。确认实际版本，而不是由 npm 最新版本推断兼容。
+不要执行无过滤的 `env`/`Get-ChildItem Env:` 或打印凭据文件。当前声明兼容 Node >=22、DSH **0.2.1-alpha.1 至 0.2.1-rc.2**。确认实际版本，而不是由 npm 最新版本推断兼容。
 
 profile 优先采用用户指定值，其次非空 `DSH_PROFILE`；二者冲突先问用户。没有上下文时询问，不默认把任意实例安装进 `web`。`DSH_HOME` 可能自定义，不能硬编码用户目录。当前 URL 要保留，不能另起服务器就宣称旧页面更新了。
 
@@ -82,7 +82,7 @@ dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#publish/dsh-plugin
 dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-gateway"
 ```
 
-只运行选中的行。需要锁定版本时把 `publish/...` 换成 tag，例如 `#dsh-plugin-gateway-v0.3.0`。每条命令检查退出码及安装器诊断；不要先在插件目录随意 `npm install` 来代替 DSH profile 安装。
+只运行选中的行。需要锁定版本时把 `publish/...` 换成 tag，例如 `#dsh-plugin-gateway-v0.3.1`。每条命令检查退出码及安装器诊断；不要先在插件目录随意 `npm install` 来代替 DSH profile 安装。
 
 ### CLI 回退：本地源码
 

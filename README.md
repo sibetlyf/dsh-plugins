@@ -22,7 +22,7 @@ DeepSeek Harness 第三方插件集合，各插件为独立可安装的 Cordis b
 ### 前置条件
 
 - Node.js >=22、Git，以及已安装且能运行的 `dsh` 和 `pnpm`。
-- 当前插件声明兼容 **DSH 0.2.1-alpha.1**。先执行 `dsh --version` 检查；其他版本尚未测试，遇到兼容性错误不要强行绕过。
+- 当前插件声明兼容 **DSH 0.2.1-alpha.1 至 0.2.1-rc.2**。先执行 `dsh --version` 检查；更旧的测试版本之外不要强行绕过。
 - 下列命令安装到 `web` profile；使用其他 profile 时，将所有 `--profile web` 和最后的 `dsh web` 改成实际名称。
 
 ### 通过 GitHub ref 安装（推荐）
@@ -38,7 +38,7 @@ dsh plugin --profile web add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-gat
 只安装其中一个时，仅执行对应行。需要锁定版本时用 tag 或 commit，例如网关插件：
 
 ```sh
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.0"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.1"
 ```
 
 整段 spec 要加引号，因为 `#` 在 PowerShell 中会被当作注释。安装器会处理 profile 依赖与 bundle 选择，无需手动编辑 profile 配置。
