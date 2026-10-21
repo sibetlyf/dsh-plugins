@@ -25,25 +25,30 @@ DeepSeek Harness 第三方插件集合，各插件为独立可安装的 Cordis b
 - 当前插件声明兼容 **DSH 0.2.1-alpha.1 至 0.2.1-rc.2**。先执行 `dsh --version` 检查；更旧的测试版本之外不要强行绕过。
 - 下列命令安装到 `web` profile；使用其他 profile 时，将所有 `--profile web` 和最后的 `dsh web` 改成实际名称。
 
-### 通过 GitHub ref 安装（推荐）
+### 安装跨端中枢（main 根 bundle）
 
-多插件仓库用 **每个插件一个发布分支**：`publish/<插件目录>` 分支的仓库根就是该插件，安装时不需要 `&path`：
+`main` 根目录现在就是跨端中枢这个 bundle，直接安装：
 
 ```sh
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-didi"
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-tencent-meeting"
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-gateway"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main"
 ```
 
-只安装其中一个时，仅执行对应行。需要锁定版本时用 tag 或 commit，例如网关插件：
+固定版本：
 
 ```sh
 dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.1"
 ```
 
+其他插件仍放在 `plugins/` 下，用各自的发布分支安装：
+
+```sh
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-didi"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-tencent-meeting"
+```
+
 整段 spec 要加引号，因为 `#` 在 PowerShell 中会被当作注释。安装器会处理 profile 依赖与 bundle 选择，无需手动编辑 profile 配置。
 
-> 这是多插件仓库，**不要**执行 `dsh plugin --profile web add github:sibetlyf/dsh-plugins#main`：`main` 根目录不是一个 bundle。请使用上面的 `publish/<插件目录>` 分支或对应 tag；私有仓库需要配置 Git token。
+> `main` 安装的是跨端中枢；它不会自动安装 `plugins/` 下的其他插件。私有仓库需要配置 Git token。
 
 维护者更新发布分支：
 
@@ -89,14 +94,14 @@ dsh web
 
 ### 更新与卸载
 
-GitHub ref 更新（`publish/<插件>` 跟随该发布分支；固定 tag 时把分支换成新 tag）：
+GitHub ref 更新（跨端中枢跟随 `main`；固定 tag 时把 `main` 换成新 tag）：
 
 ```sh
 dsh plugin --profile web remove dsh-plugin-gateway
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-gateway"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main"
 ```
 
-其他插件同理，只替换插件名和发布分支。本地源码更新：
+其他插件把 `#main` 换成各自的 `#publish/<插件>` 分支。本地源码更新：
 
 ```sh
 git pull --ff-only

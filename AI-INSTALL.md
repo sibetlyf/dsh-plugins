@@ -74,15 +74,15 @@ git clone https://github.com/sibetlyf/dsh-plugins.git
 
 ### CLI 回退：GitRef（推荐）
 
-确认当前 DSH `--help` 支持 `plugin --profile … add`。整段 spec 加引号；`PROFILE` 换成确认过的真实 profile，`publish/...` 可换成 tag 或 commit：
+确认当前 DSH `--help` 支持 `plugin --profile … add`。整段 spec 加引号；`PROFILE` 换成确认过的真实 profile：
 
 ```sh
+dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#main"
 dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-didi"
 dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-tencent-meeting"
-dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-gateway"
 ```
 
-只运行选中的行。需要锁定版本时把 `publish/...` 换成 tag，例如 `#dsh-plugin-gateway-v0.3.1`。每条命令检查退出码及安装器诊断；不要先在插件目录随意 `npm install` 来代替 DSH profile 安装。
+`#main` 安装的是跨端中枢（仓库根 bundle）；其他插件用各自的 `publish/<插件>` 分支。只运行选中的行。需要锁定版本时把 `main`/`publish/...` 换成 tag，例如 `#dsh-plugin-gateway-v0.3.1`。每条命令检查退出码及安装器诊断；不要先在插件目录随意 `npm install` 来代替 DSH profile 安装。
 
 ### CLI 回退：本地源码
 

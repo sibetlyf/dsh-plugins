@@ -1,0 +1,47 @@
+{
+  "name": "dsh-plugin-gateway",
+  "version": "0.3.1",
+  "description": "Cross-device hub for DeepSeek Harness: one nanoMuse account, messages and tasks forwarded between this computer, phones and other computers",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": "./plugins/dsh-plugin-gateway/index.js",
+    "./client": "./plugins/dsh-plugin-gateway/settings.js",
+    "./cordis.patch.yml": "./plugins/dsh-plugin-gateway/cordis.patch.yml",
+    "./locale/*.json": "./plugins/dsh-plugin-gateway/locale/*.json",
+    "./icon": "./plugins/dsh-plugin-gateway/icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "plugins/dsh-plugin-gateway/**/*",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh": "^0.2.1-alpha.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./plugins/dsh-plugin-gateway/cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-client-ui-input-trigger",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "keywords": [
+    "dsh-plugin",
+    "cordis",
+    "gateway",
+    "remote-devices",
+    "nanomuse"
+  ]
+}
