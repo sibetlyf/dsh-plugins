@@ -1331,6 +1331,7 @@ function frame(from, here, text, language) {
     `[\u8FD9\u662F\u6765\u81EA ${from} \u7684\u53E6\u4E00\u53F0\u8BBE\u5907\u3001\u901A\u8FC7 nanoMuse \u7F51\u5173\u59D4\u6258\u7684\u4EFB\u52A1\u3002\u4F60\u662F\u8FD0\u884C\u5728 ${here} \u4E0A\u7684 DSH Agent\uFF1A\u8BF7\u5728\u8FD9\u53F0\u7535\u8111\u4E0A\u5B8C\u6210\u5B83\uFF0C\u5E76\u7528\u7B80\u77ED\u7684\u4E2D\u6587\u56DE\u7B54\uFF0C\u56DE\u7B54\u4F1A\u56DE\u4F20\u7ED9 ${from}\u3002]`
   ];
   if (language) lines.push(`[\u56DE\u7B54\u8BED\u8A00\uFF1A${language}]`);
+  lines.push("[Only execute the task below; do not redo tasks already completed or reported in this session.]");
   lines.push(text);
   return lines.join("\n");
 }
@@ -1745,7 +1746,7 @@ ${value.stderr}`);
 // src/index.ts
 var name = "dsh-gateway";
 var API_PREFIX = "/nanomuse/gateway";
-var PLUGIN_VERSION = "0.3.2";
+var PLUGIN_VERSION = "0.3.3";
 var BODY_LIMIT = 2 * 1024 * 1024;
 var JOB_LIMIT = 16;
 var ACTIVITY_LIMIT = 240;
