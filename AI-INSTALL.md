@@ -82,7 +82,7 @@ dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#publish/dsh-plugin
 dsh plugin --profile PROFILE add "github:sibetlyf/dsh-plugins#publish/dsh-plugin-tencent-meeting"
 ```
 
-`#main` 安装的是跨端中枢（仓库根 bundle）；其他插件用各自的 `publish/<插件>` 分支。只运行选中的行。需要锁定版本时把 `main`/`publish/...` 换成 tag，例如 `#dsh-plugin-gateway-v0.3.2`。每条命令检查退出码及安装器诊断；不要先在插件目录随意 `npm install` 来代替 DSH profile 安装。
+`#main` 安装的是跨端中枢（仓库根 bundle）；其他插件用各自的 `publish/<插件>` 分支。只运行选中的行。需要锁定版本时把 `main`/`publish/...` 换成 tag，例如 `#dsh-plugin-gateway-v0.3.3`。每条命令检查退出码及安装器诊断；不要先在插件目录随意 `npm install` 来代替 DSH profile 安装。
 
 ### CLI 回退：本地源码
 

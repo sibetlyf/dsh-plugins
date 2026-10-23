@@ -26,7 +26,7 @@ dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main"
 
 ```powershell
 dsh plugin --profile web remove dsh-plugin-gateway
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.2"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.3"
 ```
 
 - `main` 根目录就是本插件的 bundle；`dsh-plugin-gateway-v0.3.2` 是固定版本 tag。

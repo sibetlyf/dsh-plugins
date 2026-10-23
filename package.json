@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-gateway",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Cross-device hub for DeepSeek Harness: one nanoMuse account, messages and tasks forwarded between this computer, phones and other computers",
   "type": "module",
   "license": "MIT",

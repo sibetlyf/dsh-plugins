@@ -36,7 +36,7 @@ dsh plugin --profile web add "github:sibetlyf/dsh-plugins#main"
 固定版本：
 
 ```sh
-dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.2"
+dsh plugin --profile web add "github:sibetlyf/dsh-plugins#dsh-plugin-gateway-v0.3.3"
 ```
 
 其他插件仍放在 `plugins/` 下，用各自的发布分支安装：
